@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+    security_camera:
+        build: ./camera
+        volumes: 
+            - E:/security_camera/data:/app/data
+            - E:/security_camera/logs:/app/logs
+        secrets:
+            - example
+        environment:
+            - sleeptime=5
+        #restart: unless-stopped
+secrets:
+    example:
+        file: ./secrets/example

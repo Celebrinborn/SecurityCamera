@@ -1,0 +1,11 @@
+FROM python:3.10
+
+
+
+WORKDIR /app
+RUN apt-get update -y
+RUN apt-get install -y iputils-ping
+RUN apt-get install ffmpeg x264 libx264-dev -y
+RUN pip install opencv-python
+ADD ./main.py ./main.py
+CMD [ "python3", "./main.py"]

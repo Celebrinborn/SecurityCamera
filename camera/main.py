@@ -1,6 +1,16 @@
-import cv2
 import os
 import sys
+import cv2
+import time
+import subprocess
+from queue import Queue, PriorityQueue
+import multiprocessing
+from dataclasses import dataclass
+import typing
+from datetime import datetime, timedelta
+
+def FormatTime(time:datetime):
+    return time.strftime(r"%Y%m%d_%H%M%S")
 
 if 'camera_url' in os.environ:
     camera_url = os.environ['camera_url']
@@ -13,33 +23,29 @@ else:
 
 
 import logging
-log_format =  '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logging.basicConfig(filename=os.path.join('logs', f'{camera_name}_camera_controller.log'),level=logging.DEBUG, filemode='w', format=log_format)
+import logging.handlers
 logger = logging.getLogger(__name__)
-#root = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.DEBUG)
+
+log_format =  '%(asctime)s - {%(pathname)s:%(lineno)d} - %(levelname)s - %(funcName)s - %(message)s'
 formatter = logging.Formatter(log_format)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+
+handler_stdout = logging.StreamHandler(sys.stdout)
+handler_stdout.setLevel(logging.DEBUG)
+handler_stdout.setFormatter(formatter)
+logger.addHandler(handler_stdout)
+
+_log_filename = os.path.join('logs', f'{camera_name}_{FormatTime(datetime.now())}_camera_controller.log')
+handler_files = logging.handlers.RotatingFileHandler(
+    filename=_log_filename,
+    maxBytes=52428800, backupCount=4)
+handler_files.setLevel(logging.WARNING)
+handler_files.setFormatter(formatter)
+logger.addHandler(handler_files)
+
+# logging.basicConfig(filename=os.path.join('logs', f'{camera_name}_camera_controller.log'),level=logging.DEBUG, filemode='w', format=log_format)
 
 logger.info(f'camera_url = {camera_url}')
-
-# motion loop
-
-# object reconition loop
-
-# notification
-
-import cv2
-import time
-import subprocess
-from queue import Queue, PriorityQueue
-import multiprocessing
-from dataclasses import dataclass
-import typing
-from datetime import datetime, timedelta
 
 @dataclass(order=True)
 class YoloFrame:
@@ -48,6 +54,13 @@ class YoloFrame:
     frame: typing.Any
 
 def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
+    if currentFrame is None:
+        logger.warning('DetectMotion was passed a None currentFrame')
+        return False, currentFrame
+    if prevFrame is None:
+        logger.warning('DetectMotion was passed a None prevFrame')
+        return False, prevFrame
+
     diff = cv2.absdiff(prevFrame, currentFrame)
     gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5,5), 0)
@@ -62,103 +75,125 @@ def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
         if cv2.contourArea(contour) < threshold:
             continue
         cv2.rectangle(prevFrame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        isMotion = True
+        isMotion = True  
     cv2.drawContours(prevFrame, contours, -1, (0, 255, 0), 2)
-    return isMotion
+    return isMotion, prevFrame
 
 def VideoName(camera_name:str, video_file_extention:str, video_start_time:datetime) -> str:
-    return os.path.join('data', f'{camera_name}_{video_start_time.strftime(r"%Y%m%d_%H%M%S")}.{video_file_extention}')
-def CreateVideoWriter(camera_name:str, frame_rate:int, frame_width:int, frame_height:int, video_start_time:datetime = datetime.now()) -> cv2.VideoWriter:
-    # for windows
-    #fourcc = cv2.VideoWriter_fourcc(*'xvid')
-    # for linux
+    return os.path.join('data', f'{camera_name}_{FormatTime(video_start_time)}.{video_file_extention}')
+
+def CreateVideoWriter(camera_name:str, frame_rate:int, cap:cv2.VideoCapture, video_start_time:datetime = datetime.now()) -> cv2.VideoWriter:
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fourcc = cv2.VideoWriter_fourcc(*'FMP4')
     video_file_extention = '.avi' # mp4v for windows
     logger.info(f'creating video writer {camera_name} with fourcc {fourcc}, frame rate {frame_rate}, and dimentions {frame_width, frame_height}')
     video_name = VideoName(camera_name, video_file_extention, video_start_time)
     return cv2.VideoWriter(video_name, fourcc, frame_rate, (frame_width, frame_height)), video_name
 
+# connect to camera
 
-def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_threshold:int = 900, frame_rate = 30):
+# set up recording
+
+# main loop
+
+# check frame for motion
+# if motion then do stuff
+def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Threshold:int = 900, Frame_rate = 30):
+    # connect to camera
+    logger.info(f'loading camera {Camera_name} at {Camera_path}')
+    logger.info(f'cv2 build info: {str(cv2.getBuildInformation())}')
     try:
-        logger.info(f'loading camera {camera_name} at {camera_path}')
-        cap = cv2.VideoCapture(camera_path)
-        ret, prevFrame = cap.read()
-        ret, currentFrame = cap.read()
-
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        logger.info(f'frame is {frame_width} x { frame_height} at {frame_rate} per second')
-
-        video_start_time = datetime.now()
-
-        
-        video_writer, video_name = video_writer, video_name = CreateVideoWriter(camera_name = camera_name, frame_rate=frame_rate, frame_width=frame_width, frame_height=frame_height, video_start_time=video_start_time)
-        # cv2.VideoWriter(VideoName(camera_name, video_start_time), fourcc, frame_rate, (frame_width, frame_height))
-
-        logger.info(f'cv2 build info: {str(cv2.getBuildInformation())}')
-        
-
-        lastYoloRun = datetime.now()
-
-        while cap.isOpened():
-            prevFrame = currentFrame
+        cap = cv2.VideoCapture(Camera_path)
+        # read first two frames
+        try:
+            ret, prevFrame = cap.read()
             ret, currentFrame = cap.read()
+        except BaseException as e:
+            logger.critical('unable to read initial two frames for unknown reason. the application will now close', exc_info=True)
+            logger.critical(e)
+            raise e
 
-            # save image file
+        # get video writer
+        try:
+            video_writer, video_name = CreateVideoWriter(camera_name = Camera_name, frame_rate=Frame_rate, cap = cap)
+        except BaseException as e:
+            logger.critical('unable to get video writer', exc_info=True)
+            logger.critical(e)
+            raise e
+        
+        # set the initial start time and when to finish the video
+        video_start_time = datetime.now()
+        if 'video_max_length' in os.environ:
+            try: 
+                video_max_length = int(os.environ.get('video_max_length'))
+            except ValueError as e:
+                logger.error(f'environ video_max_length is NOT an int, value is {os.environ.get("video_max_length")}')
+        else:
+            video_max_length = 5*60
+        video_end_time = video_start_time + timedelta(seconds=video_max_length)
+        while cap.isOpened():
             try:
-                _image_file_name = os.path.join('data', f'screenshot_{datetime.now().strftime(r"%Y%m%d_%H%M%S")}.jpg')
-                #cv2.imwrite(_image_file_name, prevFrame)
+                prevFrame = currentFrame
+                try:
+                    flag, currentFrame = cap.read()
+                except BaseException as e:
+                    logging.error(f'unable to read current frame, {str(e)}', exc_info=True)
+                    raise e
+
+                if currentFrame is None:
+                    logging.warning(f'currentFrame is none at ')
+
+
+                # check for motion
+                try:
+                    _isMotion, outlinedFrame = DetectMotion(currentFrame, prevFrame, Motion_Threshold)
+                except BaseException as e:
+                    logging.error('DetectMotion is crashing', exc_info=True)
+                if _isMotion:
+                    _image_file_name = os.path.join('data', 'images', f'{FormatTime(datetime.now())}.jpg')
+                    try:
+                        cv2.imwrite(_image_file_name, outlinedFrame)
+                    except BaseException as e:
+                        logger.error(f'unable to write outlined frame to image file, {str(e)}', exc_info=True)
+                # save frame to video
+                try:
+                    video_writer.write(currentFrame)
+                except BaseException as e:
+                    logger.error('unable to save frame for unknown reason', exc_info=True)
+
+                # check if max video length is reached and if so start a new video
+                if (datetime.now()) > video_end_time:
+                    video_start_time = datetime.now()
+                    video_end_time = video_start_time + timedelta(seconds=video_max_length)
+                    logger.info('video max lenght reached. starting new video')
+                    try:
+                        video_writer.release()
+                        video_writer, video_name = video_writer, video_name = CreateVideoWriter(camera_name = Camera_name, frame_rate=Frame_rate, cap = cap)
+                    except BaseException as e:
+                        logger.critical('unable to release video_writer and recreate for unknown reason. waiting 15 seconds then trying again', exc_info=True)
+                        try:
+                            time.sleep(15)
+                            video_writer.release()
+                            video_writer, video_name = video_writer, video_name = CreateVideoWriter(camera_name = Camera_name, frame_rate=Frame_rate, cap = cap)
+                        except BaseException as e:
+                            logger.critical('FINAL ATTEMPT: unable to release video_writer and recreate for unknown reason', exc_info=True)
+                            raise e
+                    logger.info(f'new video filename = {video_name}')
+
             except BaseException as e:
-                logging.error(f'unable to record screenshot because of error {str(e)}')
-                raise e
-
-            # self.VideoWriter.write(currentFrame)
-            isMotion = DetectMotion(currentFrame, prevFrame, motion_threshold)
-            if isMotion == True:
-                pass
-                # _delta = datetime.now() - lastYoloRun
-                # if _delta.seconds < 1:
-                #     # if yolo has been ran in the last 1 second skip it
-                #     pass
-                # elif _delta.seconds < 5*60:
-                #     # if this is the first movement in the last 5 minutes run yolo on 10th priority
-                #     yoloqueue.put(YoloFrame(10, datetime.now(), currentFrame))
-                # else:
-                #     # if this is the first movement in over 5 minutes run yolo on high priority
-                #     yoloqueue.put(YoloFrame(1, datetime.now(), currentFrame))
-                #     #logger.info('adding frame to yolo queue')
-
-            # Saves for video
-            video_writer.write(currentFrame)
-
-            try:
-                _delta = datetime.now() - video_start_time
-            except BaseException as e:
-                logger.critical(f'error in calculating time delta. datetime.now() type {type(datetime.now())} , video_start_time type {type(video_start_time)} video_start_time is {video_start_time}')
-                raise e
-            _video_run_time = 5*60
-            if _delta.seconds > _video_run_time:
-                logger.info(f'_video_run_time = {_video_run_time}, _delta.seconds = {_delta.seconds}')
-                logger.info(f'closing file {video_name}')
-                video_writer.release()
-                video_writer, video_name = CreateVideoWriter(camera_name = camera_name, frame_rate=frame_rate, frame_width=frame_width, frame_height=frame_height, video_start_time=video_start_time)
-                logger.info(f'opening file {video_name}')
-                video_start_time = datetime.now()
-
-            # cv2.imshow('Video', currentFrame)
-            # if cv2.waitKey(1) & 0xFF == ord('q'):
-            #     break
+                logger.critical('an unknown frame reading error has occured. continuing...')
+                logger.critical(e, exc_info=True)
 
     except BaseException as e:
-        raise e
+        logger.fatal('unhandled exception has occured. this may be an issue with the capture failing', exc_info=True)
+        logger.fatal(e, exc_info=True)
     finally:
         cap.release()
-        video_writer.release()
-
-print('starting video')
-cameras = [('cats', 'demo.mp4')]
+        try:
+            video_writer.release()
+        except BaseException:
+            logger.critical('unable to release videowriter', exc_info=True)
 
 # with multiprocessing.Pool(len(cameras)) as pool:
 #     pool.map(Camera, cameras)
@@ -168,8 +203,12 @@ logger.info(f'ping results: {str(ping)}')
 
 
 YoloQueue = PriorityQueue()
-Camera(camera_name, camera_url, YoloQueue, motion_threshold = 900, frame_rate=30)
 
+if 'motion_threshold' in os.environ:
+    motion_threshold = os.environ['motion_threshold']
+else:
+    motion_threshold = 900
 
+Main(Camera_name = camera_name, Camera_path = camera_url, YoloQueue = YoloQueue, Motion_Threshold = motion_threshold, Frame_rate=30)
 
 print(f'queue size is {YoloQueue.qsize()}')

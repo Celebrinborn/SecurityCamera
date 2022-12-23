@@ -68,7 +68,12 @@ def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
 
 def VideoName(camera_name:str, video_file_extention:str, video_start_time:datetime) -> str:
     return os.path.join('data', f'{camera_name}_{video_start_time.strftime(r"%Y%m%d_%H%M%S")}.{video_file_extention}')
-def CreateVideoWriter(camera_name:str, video_file_extention:str, video_start_time:datetime, fourcc, frame_rate:int, frame_width:int, frame_height:int) -> cv2.VideoWriter:
+def CreateVideoWriter(camera_name:str, frame_rate:int, frame_width:int, frame_height:int, video_start_time:datetime = datetime.now()) -> cv2.VideoWriter:
+    # for windows
+    #fourcc = cv2.VideoWriter_fourcc(*'xvid')
+    # for linux
+    fourcc = cv2.VideoWriter_fourcc(*'FMP4')
+    video_file_extention = '.avi' # mp4v for windows
     logger.info(f'creating video writer {camera_name} with fourcc {fourcc}, frame rate {frame_rate}, and dimentions {frame_width, frame_height}')
     video_name = VideoName(camera_name, video_file_extention, video_start_time)
     return cv2.VideoWriter(video_name, fourcc, frame_rate, (frame_width, frame_height)), video_name
@@ -88,12 +93,8 @@ def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_thr
 
         video_start_time = datetime.now()
 
-        # for windows
-        #fourcc = cv2.VideoWriter_fourcc(*'xvid')
-        # for linux
-        fourcc = cv2.VideoWriter_fourcc(*'xvid')
-        video_file_extention = '.avi' # mp4v for windows
-        video_writer, video_name = CreateVideoWriter(camera_name, video_file_extention, video_start_time, fourcc, frame_rate, frame_width, frame_height)
+        
+        video_writer, video_name = video_writer, video_name = CreateVideoWriter(camera_name = camera_name, frame_rate=frame_rate, frame_width=frame_width, frame_height=frame_height, video_start_time=video_start_time)
         # cv2.VideoWriter(VideoName(camera_name, video_start_time), fourcc, frame_rate, (frame_width, frame_height))
 
         logger.info(f'cv2 build info: {str(cv2.getBuildInformation())}')
@@ -142,7 +143,7 @@ def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_thr
                 logger.info(f'_video_run_time = {_video_run_time}, _delta.seconds = {_delta.seconds}')
                 logger.info(f'closing file {video_name}')
                 video_writer.release()
-                video_writer, video_name = CreateVideoWriter(camera_name, video_file_extention, video_start_time, fourcc, frame_rate, frame_width, frame_height)
+                video_writer, video_name = CreateVideoWriter(camera_name = camera_name, frame_rate=frame_rate, frame_width=frame_width, frame_height=frame_height, video_start_time=video_start_time)
                 logger.info(f'opening file {video_name}')
                 video_start_time = datetime.now()
 

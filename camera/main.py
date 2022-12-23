@@ -2,16 +2,29 @@ import cv2
 import os
 import sys
 
+if 'camera_url' in os.environ:
+    camera_url = os.environ['camera_url']
+else:
+    camera_url = r'rtsp://admin:@192.168.50.30:554/h264Preview_01_main'
+if 'camera_name' in os.environ:
+    camera_name = os.environ['camera_name']
+else:
+    camera_name = 'testcamera'
+
+
 import logging
-logging.basicConfig(filename=os.path.join('logs', 'securityCamera.log'),level=logging.DEBUG)
+log_format =  '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging.basicConfig(filename=os.path.join('logs', f'{camera_name}_camera_controller.log'),level=logging.DEBUG, filemode='w', format=log_format)
 logger = logging.getLogger(__name__)
 #root = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 handler = logging.StreamHandler(sys.stdout)
 handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(log_format)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+logger.info(f'camera_url = {camera_url}')
 
 # motion loop
 
@@ -53,16 +66,17 @@ def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
     cv2.drawContours(prevFrame, contours, -1, (0, 255, 0), 2)
     return isMotion
 
-def VideoName(camera_name:str, video_start_time:datetime) -> str:
-    return os.path.join('data', f'{camera_name}_{video_start_time.strftime(r"%Y%m%d_%H%M%S")}.mp4v')
-def CreateVideoWriter(camera_name:str, video_start_time:datetime, fourcc, frame_rate:int, frame_width:int, frame_height:int) -> cv2.VideoWriter:
-    video_name = VideoName(camera_name, video_start_time)
+def VideoName(camera_name:str, video_file_extention:str, video_start_time:datetime) -> str:
+    return os.path.join('data', f'{camera_name}_{video_start_time.strftime(r"%Y%m%d_%H%M%S")}.{video_file_extention}')
+def CreateVideoWriter(camera_name:str, video_file_extention:str, video_start_time:datetime, fourcc, frame_rate:int, frame_width:int, frame_height:int) -> cv2.VideoWriter:
+    logger.info(f'creating video writer {camera_name} with fourcc {fourcc}, frame rate {frame_rate}, and dimentions {frame_width, frame_height}')
+    video_name = VideoName(camera_name, video_file_extention, video_start_time)
     return cv2.VideoWriter(video_name, fourcc, frame_rate, (frame_width, frame_height)), video_name
 
 
 def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_threshold:int = 900, frame_rate = 30):
     try:
-        logger.info(f'loading camera {camera_name}')
+        logger.info(f'loading camera {camera_name} at {camera_path}')
         cap = cv2.VideoCapture(camera_path)
         ret, prevFrame = cap.read()
         ret, currentFrame = cap.read()
@@ -77,10 +91,12 @@ def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_thr
         # for windows
         #fourcc = cv2.VideoWriter_fourcc(*'xvid')
         # for linux
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_writer, video_name = CreateVideoWriter(camera_name, video_start_time, fourcc, frame_rate, frame_width, frame_height)
+        fourcc = cv2.VideoWriter_fourcc(*'xvid')
+        video_file_extention = '.avi' # mp4v for windows
+        video_writer, video_name = CreateVideoWriter(camera_name, video_file_extention, video_start_time, fourcc, frame_rate, frame_width, frame_height)
         # cv2.VideoWriter(VideoName(camera_name, video_start_time), fourcc, frame_rate, (frame_width, frame_height))
 
+        logger.info(f'cv2 build info: {str(cv2.getBuildInformation())}')
         
 
         lastYoloRun = datetime.now()
@@ -88,6 +104,15 @@ def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_thr
         while cap.isOpened():
             prevFrame = currentFrame
             ret, currentFrame = cap.read()
+
+            # save image file
+            try:
+                _image_file_name = os.path.join('data', f'screenshot_{datetime.now().strftime(r"%Y%m%d_%H%M%S")}.jpg')
+                #cv2.imwrite(_image_file_name, prevFrame)
+            except BaseException as e:
+                logging.error(f'unable to record screenshot because of error {str(e)}')
+                raise e
+
             # self.VideoWriter.write(currentFrame)
             isMotion = DetectMotion(currentFrame, prevFrame, motion_threshold)
             if isMotion == True:
@@ -107,13 +132,17 @@ def Camera(camera_name:str, camera_path:str, yoloqueue:PriorityQueue, motion_thr
             # Saves for video
             video_writer.write(currentFrame)
 
-            _delta = datetime.now() - video_start_time
+            try:
+                _delta = datetime.now() - video_start_time
+            except BaseException as e:
+                logger.critical(f'error in calculating time delta. datetime.now() type {type(datetime.now())} , video_start_time type {type(video_start_time)} video_start_time is {video_start_time}')
+                raise e
             _video_run_time = 5*60
             if _delta.seconds > _video_run_time:
-                logger.info(_video_run_time, _delta.seconds)
+                logger.info(f'_video_run_time = {_video_run_time}, _delta.seconds = {_delta.seconds}')
                 logger.info(f'closing file {video_name}')
                 video_writer.release()
-                video_writer, video_name = CreateVideoWriter(camera_name, video_start_time, fourcc, frame_rate, frame_width, frame_height)
+                video_writer, video_name = CreateVideoWriter(camera_name, video_file_extention, video_start_time, fourcc, frame_rate, frame_width, frame_height)
                 logger.info(f'opening file {video_name}')
                 video_start_time = datetime.now()
 
@@ -133,16 +162,12 @@ cameras = [('cats', 'demo.mp4')]
 # with multiprocessing.Pool(len(cameras)) as pool:
 #     pool.map(Camera, cameras)
 
-with open(os.path.join('data', "helloworld.txt"), "a") as f:
-    f.write(f"starting at{datetime.now()}!")
-    f.close()
-
 ping = str(os.system('ping -c 1 192.168.50.30'))
-logger.info(f'ping results: {ping}')
+logger.info(f'ping results: {str(ping)}')
 
 
 YoloQueue = PriorityQueue()
-Camera('testcamera', r'rtsp://admin:@192.168.50.30:554/h264Preview_01_main', YoloQueue, motion_threshold = 900, frame_rate=30)
+Camera(camera_name, camera_url, YoloQueue, motion_threshold = 900, frame_rate=30)
 
 
 

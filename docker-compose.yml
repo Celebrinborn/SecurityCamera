@@ -4,12 +4,14 @@ services:
     security_camera:
         build: ./camera
         volumes: 
-            - E:/security_camera/data:/app/data
-            - E:/security_camera/logs:/app/logs
+            - E:/security_camera/data:/opt/build/data
+            - E:/security_camera/logs:/opt/build/logs
         secrets:
             - example
         environment:
             - sleeptime=5
+            - camera_url=rtsp://admin:@192.168.50.30:554/h264Preview_01_main
+            - camera_name=testcamera
         #restart: unless-stopped
 secrets:
     example:

@@ -2,12 +2,18 @@ import os
 import sys
 import cv2
 import time
+import numpy as np
 import subprocess
 from queue import Queue, PriorityQueue
 import multiprocessing
 from dataclasses import dataclass
 import typing
 from datetime import datetime, timedelta
+
+# from mask_generator import DrawMask
+def DrawMask(image:np.ndarray, mask:np.array):
+    img = image.copy()
+    return cv2.fillPoly(img, pts=[mask], color=(255,255,255))
 
 def FormatTime(time:datetime):
     return time.strftime(r"%Y%m%d_%H%M%S")
@@ -25,13 +31,13 @@ else:
 import logging
 import logging.handlers
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 log_format =  '%(asctime)s - {%(pathname)s:%(lineno)d} - %(levelname)s - %(funcName)s - %(message)s'
 formatter = logging.Formatter(log_format)
 
 handler_stdout = logging.StreamHandler(sys.stdout)
-handler_stdout.setLevel(logging.DEBUG)
+handler_stdout.setLevel(logging.INFO)
 handler_stdout.setFormatter(formatter)
 logger.addHandler(handler_stdout)
 
@@ -94,7 +100,15 @@ def DetectMotion(Frame_width, Frame_height, CurrentFrame, PrevFrame, Threshold:i
     return isMotion
 
 def VideoName(camera_name:str, video_file_extention:str, video_start_time:datetime) -> str:
-    return os.path.join('data', f'{camera_name}_{FormatTime(video_start_time)}.{video_file_extention}')
+    # create directory if it does not exist
+    _path = os.path.join('data', camera_name)
+    
+    if not os.path.exists(_path):
+        logger.info(f'path {_path} does not exist. creating...')
+        logger.info(f'at: {os.getcwd()}')
+        os.mkdir(_path)
+
+    return os.path.join('data', camera_name, f'{camera_name}_{FormatTime(video_start_time)}.{video_file_extention}')
 
 def CreateVideoWriter(camera_name:str, frame_rate:int, cap:cv2.VideoCapture, video_start_time:datetime = datetime.now()) -> cv2.VideoWriter:
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -104,7 +118,6 @@ def CreateVideoWriter(camera_name:str, frame_rate:int, cap:cv2.VideoCapture, vid
     logger.info(f'creating video writer {camera_name} with fourcc {fourcc}, frame rate {frame_rate}, and dimentions {frame_width, frame_height}')
     video_name = VideoName(camera_name, video_file_extention, video_start_time)
     return cv2.VideoWriter(video_name, fourcc, frame_rate, (frame_width, frame_height)), video_name
-
 
 # connect to camera
 
@@ -117,17 +130,47 @@ def CreateVideoWriter(camera_name:str, frame_rate:int, cap:cv2.VideoCapture, vid
 def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Threshold:int = 900, Frame_rate = 30):
     # connect to camera
     logger.info(f'loading camera {Camera_name} at {Camera_path}')
-    logger.info(f'cv2 build info: {str(cv2.getBuildInformation())}')
+    logger.debug(f'cv2 build info: {str(cv2.getBuildInformation())}')
+    
+    # check if mask file is present
+    _files_in_directory = os.listdir(os.path.join('data'))
+    logger.debug(f'files in data directory: {_files_in_directory}')
+    _file_in_directory = f'{camera_name}_mask.npy'
+    if _file_in_directory in _files_in_directory:
+        _file_in_directory_full_path = os.path.join('data', _file_in_directory)
+        logger.info(f'loading mask file {_file_in_directory_full_path}')
+        try:
+            mask = np.load(_file_in_directory_full_path)
+        except ValueError:
+            mask = None
+            logging.warning('unable to load mask')
+    else:
+        mask = None
+
     try:
         cap = cv2.VideoCapture(Camera_path)
         # read first two frames
         try:
             ret, prevFrame = cap.read()
             ret, currentFrame = cap.read()
+
+            # generate first two masked images
+            if mask is not None:
+                masked_prevFrame = DrawMask(prevFrame, mask)
+                masked_currentFrame = DrawMask(currentFrame, mask)
+            #save preview of mask if it doesn't already exist
+            _mask_preview_filename = os.path.join('data', f'{camera_name}_mask_preview.jpg')
+            if not os.path.exists(_mask_preview_filename):
+                masked_currentFrame = cv2.imwrite(_mask_preview_filename, currentFrame.copy())
         except BaseException as e:
             logger.critical('unable to read initial two frames for unknown reason. the application will now close', exc_info=True)
             logger.critical(e)
             raise e
+
+        # generate preview image for generating masks
+        _view_preview_filename = f'{camera_name}_preview.jpg'
+        logger.info(f'saving preview file {_view_preview_filename}')
+        cv2.imwrite(os.path.join('data', _view_preview_filename), currentFrame)
 
         # get dimentions
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -174,6 +217,10 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
                 if currentFrame is None:
                     logging.warning(f'currentFrame is none at ')
 
+                # apply mask
+                masked_prevFrame = masked_currentFrame
+                if mask is not None:
+                    masked_currentFrame = DrawMask(currentFrame, mask)
 
                 # check for motion
                 try:
@@ -230,8 +277,6 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
 # with multiprocessing.Pool(len(cameras)) as pool:
 #     pool.map(Camera, cameras)
 
-ping = str(os.system('ping -c 1 192.168.50.30'))
-logger.info(f'ping results: {str(ping)}')
 
 
 YoloQueue = PriorityQueue()

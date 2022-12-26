@@ -35,7 +35,8 @@ handler_stdout.setLevel(logging.DEBUG)
 handler_stdout.setFormatter(formatter)
 logger.addHandler(handler_stdout)
 
-_log_filename = os.path.join('logs', f'{camera_name}_{FormatTime(datetime.now())}_camera_controller.log')
+#_{FormatTime(datetime.now())}
+_log_filename = os.path.join('logs', f'{camera_name}_camera_controller.log')
 handler_files = logging.handlers.RotatingFileHandler(
     filename=_log_filename,
     maxBytes=52428800, backupCount=4)
@@ -53,31 +54,44 @@ class YoloFrame:
     timestamp: datetime
     frame: typing.Any
 
-def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
-    if currentFrame is None:
+def DetectMotion(Frame_width, Frame_height, CurrentFrame, PrevFrame, Threshold:int, Mask=None) -> bool:
+    if CurrentFrame is None:
         logger.warning('DetectMotion was passed a None currentFrame')
-        return False, currentFrame
-    if prevFrame is None:
+        return False, CurrentFrame
+    if PrevFrame is None:
         logger.warning('DetectMotion was passed a None prevFrame')
-        return False, prevFrame
+        return False, PrevFrame
 
-    diff = cv2.absdiff(prevFrame, currentFrame)
-    gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
-    _, thresh = cv2.threshold(blur, 20, 255, cv2.THRESH_BINARY)
-    dilated = cv2.dilate(thresh, None, iterations=3)
-    contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
+    # height scale ratioq
+    height_ratio = 100 / Frame_height
+    width_ratio = 100 / Frame_width
+
+    area_ratio = (Frame_height * Frame_width)
+
+    background = cv2.cvtColor(PrevFrame,cv2.COLOR_BGR2GRAY)
+    background = cv2.GaussianBlur(background,(21,21), 0)
+
+    gray = cv2.cvtColor(CurrentFrame,cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray,(21,21), 0)
+    
+    diff = cv2.absdiff(background,gray)
+
+    thresh = cv2.threshold(diff,30,255,cv2.THRESH_BINARY)[1]
+    thresh = cv2.dilate(thresh, None, iterations = 2)
+
+    cnts,res = cv2.findContours(thresh.copy(),
+        cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
     isMotion = False
-    for contour in contours:
-        (x, y, w, h) = cv2.boundingRect(contour)
-
-        if cv2.contourArea(contour) < threshold:
+    bounding_image = CurrentFrame.copy()
+    for contour in cnts:
+        if cv2.contourArea(contour) < Threshold :
             continue
-        cv2.rectangle(prevFrame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        isMotion = True  
-    cv2.drawContours(prevFrame, contours, -1, (0, 255, 0), 2)
-    return isMotion, prevFrame
+        #(x,y,w,h) = cv2.boundingRect(contour)
+        #cv2.rectangle(bounding_image,(x,y),(x+w,y+h),(0,255,0), 3)
+        isMotion = True
+    return isMotion
 
 def VideoName(camera_name:str, video_file_extention:str, video_start_time:datetime) -> str:
     return os.path.join('data', f'{camera_name}_{FormatTime(video_start_time)}.{video_file_extention}')
@@ -90,6 +104,7 @@ def CreateVideoWriter(camera_name:str, frame_rate:int, cap:cv2.VideoCapture, vid
     logger.info(f'creating video writer {camera_name} with fourcc {fourcc}, frame rate {frame_rate}, and dimentions {frame_width, frame_height}')
     video_name = VideoName(camera_name, video_file_extention, video_start_time)
     return cv2.VideoWriter(video_name, fourcc, frame_rate, (frame_width, frame_height)), video_name
+
 
 # connect to camera
 
@@ -114,6 +129,10 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
             logger.critical(e)
             raise e
 
+        # get dimentions
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
         # get video writer
         try:
             video_writer, video_name = CreateVideoWriter(camera_name = Camera_name, frame_rate=Frame_rate, cap = cap)
@@ -132,6 +151,8 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
         else:
             video_max_length = 5*60
         video_end_time = video_start_time + timedelta(seconds=video_max_length)
+
+        read_frame_attempts = 0
         while cap.isOpened():
             try:
                 prevFrame = currentFrame
@@ -140,6 +161,15 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
                 except BaseException as e:
                     logging.error(f'unable to read current frame, {str(e)}', exc_info=True)
                     raise e
+                if flag == False:
+                    logging.info('no frame available')
+                    read_frame_attempts = read_frame_attempts + 1
+                    logging.info(f'waiting {2**read_frame_attempts} seconds before reestablishing connection')
+                    time.sleep(2**read_frame_attempts) # exponential backoff 2 ^ read_frame_attempts
+                    if read_frame_attempts > 4:
+                        cap = cv2.VideoCapture(Camera_path)
+                        flag, currentFrame = cap.read()
+                    continue
 
                 if currentFrame is None:
                     logging.warning(f'currentFrame is none at ')
@@ -147,13 +177,15 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
 
                 # check for motion
                 try:
-                    _isMotion, outlinedFrame = DetectMotion(currentFrame, prevFrame, Motion_Threshold)
+                    # Frame_width, Frame_height, CurrentFrame, PrevFrame, Threshold:int, Mask=None) -> bool:
+                    _isMotion = DetectMotion(
+                        Frame_width=frame_width, Frame_height=frame_height, CurrentFrame=currentFrame, PrevFrame=prevFrame, Mask=None, Threshold=100)
                 except BaseException as e:
                     logging.error('DetectMotion is crashing', exc_info=True)
                 if _isMotion:
                     _image_file_name = os.path.join('data', 'images', f'{FormatTime(datetime.now())}.jpg')
                     try:
-                        cv2.imwrite(_image_file_name, outlinedFrame)
+                        cv2.imwrite(_image_file_name, currentFrame)
                     except BaseException as e:
                         logger.error(f'unable to write outlined frame to image file, {str(e)}', exc_info=True)
                 # save frame to video

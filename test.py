@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 import cv2
 import os
 
-Motion_Threshold = 500000
+Motion_Threshold = 100
 
 def FormatTime(time:datetime):
     return time.strftime(r"%Y%m%d_%H%M%S")
 
-def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
-    print(threshold)
+def DetectMotion(mask, frame_width, frame_height, currentFrame, prevFrame, threshold:int) -> bool:
+    # print(threshold)
+    print(type(prevFrame))
     if currentFrame is None:
         logger.warning('DetectMotion was passed a None currentFrame')
         return False, currentFrame
@@ -19,24 +20,38 @@ def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
         logger.warning('DetectMotion was passed a None prevFrame')
         return False, prevFrame
 
-    diff = cv2.absdiff(prevFrame, currentFrame)
-    gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
-    _, thresh = cv2.threshold(blur, 20, 255, cv2.THRESH_BINARY)
-    dilated = cv2.dilate(thresh, None, iterations=3)
-    contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    isMotion = False
-    for contour in contours:
-        (x, y, w, h) = cv2.boundingRect(contour)
+    # height scale ratioq
+    height_ratio = 100 / frame_height
+    width_ratio = 100 / frame_width
 
-        if cv2.contourArea(contour) < threshold:
+    area_ratio = (frame_height * frame_width)
+
+    background = cv2.cvtColor(prevFrame,cv2.COLOR_BGR2GRAY)
+    background = cv2.GaussianBlur(background,(21,21), 0)
+
+    gray = cv2.cvtColor(currentFrame,cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray,(21,21), 0)
+    
+    diff = cv2.absdiff(background,gray)
+
+    thresh = cv2.threshold(diff,30,255,cv2.THRESH_BINARY)[1]
+    thresh = cv2.dilate(thresh, None, iterations = 2)
+
+    cnts,res = cv2.findContours(thresh.copy(),
+        cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    bounding_image = currentFrame.copy()
+    for contour in cnts:
+        if cv2.contourArea(contour) < threshold :
             continue
-        cv2.rectangle(prevFrame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        isMotion = True  
-    cv2.drawContours(prevFrame, contours, -1, (0, 255, 0), 2)
-    return isMotion, prevFrame
-# on open find all files and add them to queue
+        (x,y,w,h) = cv2.boundingRect(contour)
+        cv2.rectangle(bounding_image,(x,y),(x+w,y+h),(0,255,0), 3)
+
+    # return currentFrame
+
+
+    # on open find all files and add them to queue
 
 #fifo queue
 # add files to queue. delete from queue when reaching size
@@ -47,48 +62,42 @@ def DetectMotion(currentFrame, prevFrame, threshold:int) -> bool:
 
 print('starting')
 try:
-    _video_path = os.path.join('camera','samples','Front East facing East - Mon Dec 19 13-48-45 2022.mp4')
+    _video_path = os.path.join('camera','samples','Front East looking West - Thu Dec 22 17-10-40 2022.mp4')
     print(_video_path)
     cap = cv2.VideoCapture(_video_path)
     # read first two frames
-    try:
-        ret, prevFrame = cap.read()
-        ret, currentFrame = cap.read()
-    except BaseException as e:
-        logger.critical('unable to read initial two frames for unknown reason. the application will now close', exc_info=True)
-        logger.critical(e)
-        raise e
+   
+    ret, prevFrame = cap.read()
+    ret, currentFrame = cap.read()
     while cap.isOpened():
-        try:
-            print('reading frame')
-            prevFrame = currentFrame
-            try:
-                flag, currentFrame = cap.read()
-            except BaseException as e:
-                logging.error(f'unable to read current frame, {str(e)}', exc_info=True)
-                raise e
+    
+        # print('reading frame')
+        prevFrame = currentFrame
 
-            if currentFrame is None:
-                logging.warning(f'currentFrame is none at ')
+        flag, currentFrame = cap.read()
 
 
-            # check for motion
-            _isMotion, outlinedFrame = DetectMotion(currentFrame, prevFrame, Motion_Threshold)
-            if ret:
-                # outlinedFrame
-                cv2.imshow('Frame', prevFrame)
-            
-            if cv2.waitKey(25) & 0xFF == ord('q'):
-                break
-            # save frame to video
-            # try:
-            #     video_writer.write(currentFrame)
-            # except BaseException as e:
-            #     logger.error('unable to save frame for unknown reason', exc_info=True)
+        if currentFrame is None:
+            logging.warning(f'currentFrame is none at ')
 
-        except BaseException as e:
-            logger.critical('an unknown frame reading error has occured. continuing...')
-            logger.critical(e, exc_info=True)
+
+        # check for motion
+        # _isMotion, outlinedFrame = 
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        detected_frame = DetectMotion(frame_width, frame_height, currentFrame, prevFrame, Motion_Threshold)
+        if ret:
+            # outlinedFrame
+            pass
+            # cv2.imshow('Frame', currentFrame)
+        
+        if cv2.waitKey(25) & 0xFF == ord('q'):
+            break
+        # save frame to video
+        # try:
+        #     video_writer.write(currentFrame)
+        # except BaseException as e:
+        #     logger.error('unable to save frame for unknown reason', exc_info=True)
 
 except BaseException as e:
     logger.fatal('unhandled exception has occured. this may be an issue with the capture failing', exc_info=True)

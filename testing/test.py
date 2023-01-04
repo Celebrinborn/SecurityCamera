@@ -18,8 +18,24 @@ import calendar
 
 import os
 import logging
-logging.basicConfig(filename=os.path.join('logs', 'test.log'), level=logging.DEBUG)
+import sys
+
 logger = logging.getLogger(__name__)
+logger.setLevel=logging.DEBUG
 
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel=logging.DEBUG
 
-logger.info('hello world')
+file_handler = logging.FileHandler(filename=os.path.join('logs', 'test.log'))
+file_handler.setLevel=logging.ERROR
+
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+logger.info('hello world info')
+logger.error('hello world error')
+

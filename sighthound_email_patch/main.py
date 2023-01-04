@@ -32,15 +32,15 @@ add_creds_args.add_argument('--add_creds', action='store_true')
 
 args = parser.parse_args()
 
-# # load test variables because I can't get vscode to use the parser
-# if os.path.exists(os.path.join('sighthound_email_patch', '_settings.py')):
-#     logger.warning('loading test parser file')
-#     import _settings
-#     args = _settings.test_parser()
-#     print(os.listdir())
-# else:
-#     print('running without test vars')
-#     print(os.listdir())
+# load test variables because I can't get vscode to use the parser
+if os.path.exists(os.path.join('sighthound_email_patch', '_settings.py')):
+    logger.warning('loading test parser file')
+    import _settings
+    args = _settings.test_parser()
+    print(os.listdir())
+else:
+    print('running without test vars')
+    print(os.listdir())
 
 logger.info('system args')
 logger.info(dir(args))
@@ -115,11 +115,14 @@ def Main():
     _newest_directory = None
     _second_newest_directory = None
     for directory in os.listdir(base_path):
-        _modified_date = os.path.getmtime(os.path.join(base_path,directory))
-        if _modified_date > _newest_date:
-            _second_newest_directory = _newest_directory
-            _newest_date = _modified_date
-            _newest_directory = directory
+        if not directory.isdigit():
+            logger.debug(f'skipping directory {directory}')
+        else:
+            _directory_name_int = int(directory)
+            if _directory_name_int > _newest_date:
+                _second_newest_directory = _newest_directory
+                _newest_date = _directory_name_int
+                _newest_directory = directory
 
     logger.info(f'newest date {_newest_date}, newest directory {_newest_directory}, second newest directory {_second_newest_directory}')
     thumbnails_folder_path = os.path.join(base_path, _newest_directory, 'thumbs')

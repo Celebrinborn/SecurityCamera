@@ -11,23 +11,11 @@ from email.message import EmailMessage
 import mimetypes
 
 import logging
+logging.basicConfig(filename=os.path.join('logs', 'sighthound_email_patch.log'), level=logging.ERROR)
+
 logger = logging.getLogger(__name__)
 
-# Create handlers
-c_handler = logging.StreamHandler()
-f_handler = logging.FileHandler(os.path.join('logs', 'sighthound_email_patch.log'))
-c_handler.setLevel(logging.DEBUG) # Change me to change console messages
-f_handler.setLevel(logging.INFO) # Change me to change file messages
-
-# Create formatters and add it to handlers
-c_format = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-c_handler.setFormatter(c_format)
-f_handler.setFormatter(f_format)
-
-# Add handlers to the logger
-logger.addHandler(c_handler)
-logger.addHandler(f_handler)
+logger.debug('hello world')
 
 
 parser = argparse.ArgumentParser()
@@ -35,24 +23,24 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-p', '--path', type=str, help='path to camera directory (c:/users/adminsistrator/appdata/local/sighthound videos/videos/archive/front east looking west)')
 parser.add_argument('-n', '--camera_name', type=str, help='camera name for email')
 parser.add_argument('-s', '--subject_line', type=str, help='email subject line', default=f'sighthound person detected')
-parser.add_argument('-d', '--delay', type=int, help='time in seconds to wait prior to pulling event', default=0)
+parser.add_argument('--delay', type=int, help='time in seconds to wait prior to pulling event', default=0)
 parser.add_argument('-c', '--count', type=int, help='number of screenshots to send', default=13)
-parser.add_argument('--destination_email', type=str, help='who to send the email to')
+parser.add_argument('-d', '--destination_email', type=str, help='who to send the email to')
 
 add_creds_args = parser.add_mutually_exclusive_group()
 add_creds_args.add_argument('--add_creds', action='store_true')
 
 args = parser.parse_args()
 
-# load test variables because I can't get vscode to use the parser
-if os.path.exists(os.path.join('sighthound_email_patch', '_settings.py')):
-    logger.warning('loading test parser file')
-    import _settings
-    args = _settings.test_parser()
-    print(os.listdir())
-else:
-    print('running without test vars')
-    print(os.listdir())
+# # load test variables because I can't get vscode to use the parser
+# if os.path.exists(os.path.join('sighthound_email_patch', '_settings.py')):
+#     logger.warning('loading test parser file')
+#     import _settings
+#     args = _settings.test_parser()
+#     print(os.listdir())
+# else:
+#     print('running without test vars')
+#     print(os.listdir())
 
 logger.info('system args')
 logger.info(dir(args))
@@ -75,8 +63,11 @@ def AddCreds():
 #     msg.attach(MIMEApplication(textStream.getvalue(), Name=filename))
 
 
-def Send_Email(filename):
+def Send_Email(list_of_files:list):
     
+    if isinstance(list_of_files, str):
+        list_of_files = [list_of_files]
+
     smtp_server = "smtp.gmail.com" #name of smptp server 
     port = 587  # For starttls 
 
@@ -86,14 +77,16 @@ def Send_Email(filename):
     message['To'] = args.destination_email
     message.set_content(f"""People detected by {args.camera_name} at {datetime.now().strftime(r"%Y%m%d_%H%M%S")}""")
 
-    print(f'file is {filename}')
-    print(f'does file exist: {os.path.isfile(filename)}')
-    with open(filename, 'rb') as file:
-        _content = file.read()
-        message.add_attachment(_content, maintype='image', subtype='jpg', filename=filename)
-    
+    for filename in list_of_files:
+        if os.path.isfile(filename):
+            with open(filename, 'rb') as file:
+                _content = file.read()
+                message.add_attachment(_content, maintype='image', subtype='jpg', filename=filename)
+        else:
+            logger.error(f'file {filename} does not exist. sending email without attachment')
+
     server = smtplib.SMTP(smtp_server, port)
-    # s = smtplib.SMTP('smtp.sendgrid.net', 587)
+
     try:
         server.connect(smtp_server, port)
         server.ehlo()
@@ -103,7 +96,7 @@ def Send_Email(filename):
             , keyring.get_password('sighthound_email_patch_creds', 'email_password'))
         server.send_message(message)
     except BaseException as e:
-        raise e
+        logger.critical(e, exc_info=True)
     finally:
         server.quit()
     
@@ -120,16 +113,14 @@ def Main():
     _newest_date = 0 # some date in 1940, just need something older then anything in the directory
     _newest_directory = None
     _second_newest_directory = None
-    print(f'list dir: {os.listdir(base_path)}')
     for directory in os.listdir(base_path):
         _modified_date = os.path.getmtime(os.path.join(base_path,directory))
         if _modified_date > _newest_date:
             _second_newest_directory = _newest_directory
             _newest_date = _modified_date
             _newest_directory = directory
-            print(f'directory: {directory}, _modified_date: {_modified_date}, _newest_date: {_newest_date}, _newest_directory: {_newest_directory}')
 
-    print(_newest_directory, _second_newest_directory)
+    logger.info(f'newest date {_newest_date}, newest directory {_newest_directory}, second newest directory {_second_newest_directory}')
     thumbnails_folder_path = os.path.join(base_path, _newest_directory, 'thumbs')
     second_thumbnails_folder_path = os.path.join(base_path, _second_newest_directory, 'thumbs')
 
@@ -137,15 +128,18 @@ def Main():
     if not os.path.exists(thumbnails_folder_path):
         logger.critical(f'path {str(thumbnails_folder_path)} does not exist')
         raise Exception('invalid thumbnails_folder_path')
+    else:
+        logger.debug(f'thumbnails_folder_path is: {thumbnails_folder_path}')
 
 
     # get a list of files in the directoryl sort by title (they are unix timestamps so sorting in ascending order is fine)
     # and filter to make sure the extention is always .jpg
-    print("thumbshot_filename_list = [os.path.join(thumbnails_folder_path, jpg) for jpg in os.listdir(thumbnails_folder_path).sort() if jpg[-4:].lower() == '.jpg']")
-    print(thumbnails_folder_path, os.listdir(thumbnails_folder_path))
+    logger.debug(f"thumbnails_folder_path {os.listdir(thumbnails_folder_path)}")
 
     thumbshot_filename_list = [os.path.join(thumbnails_folder_path, jpg) for jpg in sorted(os.listdir(thumbnails_folder_path)) if jpg[-4:].lower() == '.jpg']
+    logger.debug(f'thumbshot_filename_list: {thumbshot_filename_list}')
     second_thumbshot_filename_list = [os.path.join(second_thumbnails_folder_path, jpg) for jpg in sorted(os.listdir(second_thumbnails_folder_path)) if jpg[-4:].lower() == '.jpg']
+    logger.debug(f'second_thumbshot_filename_list: {second_thumbshot_filename_list}')
 
     # get list of image paths to attach to email
     image_paths_to_send_list = []
@@ -158,22 +152,9 @@ def Main():
             image_paths_to_send_list = image_paths_to_send_list + second_thumbshot_filename_list[-_count_remaining:]
         else: # make sure you don't grab more files then exist from the backup folder
             image_paths_to_send_list = image_paths_to_send_list + second_thumbshot_filename_list
-
-
-
-    # ogger.info('adding cred')
-    # email_address = input('email address: ')
-    # keyring.set_password("sighthound_email_patch_creds", "email_address", email_address)
-    # password = input('password: ')
-    # keyring.set_password("sighthound_email_patch_creds", "email_password", password)
     
-    #smtp_server = "smtp.gmail.com" #name of smptp server 
-    port = 587  # For starttls 
-
-    #send_email()
+    logger.debug(f'image_paths_to_send_list: length: {len(image_paths_to_send_list)} list: {image_paths_to_send_list}')
     _screenshot_to_sent = image_paths_to_send_list[0]
-    print('screenshot_path', _screenshot_to_sent)
-
     Send_Email(_screenshot_to_sent)
 
     # find {count} screenshots after event
@@ -185,10 +166,10 @@ def Main():
     # send email
 
 if __name__ == '__main__':
-    print('running code')
     if args.add_creds == True:
         print('running add creds')
         AddCreds()
+        logger.info(f'successfully added credentails at {datetime.now().strftime(r"%Y%m%d_%H%M%S")}')
     else:
-        print('sending email')
         Main()
+        logger.info(f'successfully sent email at {datetime.now().strftime(r"%Y%m%d_%H%M%S")}')

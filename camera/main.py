@@ -274,10 +274,6 @@ def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Thres
         except BaseException:
             logger.critical('unable to release videowriter', exc_info=True)
 
-# with multiprocessing.Pool(len(cameras)) as pool:
-#     pool.map(Camera, cameras)
-
-
 
 YoloQueue = PriorityQueue()
 

@@ -54,6 +54,7 @@ RUN apt-get -qq update \
     && apt-get -qq autoremove \
     && apt-get -qq clean
 
+    RUN pip install torch torchvision torchaudio
 #WORKDIR /app
 ADD ./main.py ./main.py
 CMD [ "python3", "./main.py"]

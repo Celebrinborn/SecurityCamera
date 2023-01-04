@@ -15,3 +15,11 @@ import calendar
 
 # # Results
 # results.print()  # or .show(), .save(), .crop(), .pandas(), etc.
+
+import os
+import logging
+logging.basicConfig(filename=os.path.join('logs', 'test.log'), level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+logger.info('hello world')

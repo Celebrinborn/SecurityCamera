@@ -11,7 +11,7 @@ from email.message import EmailMessage
 import mimetypes
 
 import logging
-logging.basicConfig(filename=os.path.join('logs', 'sighthound_email_patch.log'), level=logging.ERROR)
+logging.basicConfig(filename=os.path.join('logs', 'sighthound_email_patch.log'), level=logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ def Send_Email(list_of_files:list):
 
     for filename in list_of_files:
         if os.path.isfile(filename):
+            logger.debug(f'adding {filename}')
             with open(filename, 'rb') as file:
                 _content = file.read()
                 message.add_attachment(_content, maintype='image', subtype='jpg', filename=filename)
@@ -154,8 +155,8 @@ def Main():
             image_paths_to_send_list = image_paths_to_send_list + second_thumbshot_filename_list
     
     logger.debug(f'image_paths_to_send_list: length: {len(image_paths_to_send_list)} list: {image_paths_to_send_list}')
-    _screenshot_to_sent = image_paths_to_send_list[0]
-    Send_Email(_screenshot_to_sent)
+	
+    Send_Email(image_paths_to_send_list)
 
     # find {count} screenshots after event
 

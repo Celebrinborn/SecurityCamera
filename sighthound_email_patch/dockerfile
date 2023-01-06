@@ -1,0 +1,7 @@
+FROM python:3.9
+# WORKDIR /app
+#ADD sighthound_email_patch.py ./sighthound_email_patch.py
+#CMD [ "python3", "./sighthound_email_patch.py"]
+
+ADD /sighthound_monitor.py ./sighthound_monitor.py
+CMD [ "python3", "sighthound_monitor.py"]

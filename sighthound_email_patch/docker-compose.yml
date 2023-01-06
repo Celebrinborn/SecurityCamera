@@ -1,0 +1,22 @@
+version: '3'
+services:
+    sighthound_email_patch:
+        build: ./
+        volumes: 
+            - E:/test:/archive
+            - E:/sighthound_patch/logs:/logs
+        secrets:
+            - destination_email
+            - login
+            - password
+        environment:
+            - sleeptime=5
+            - image_count=1
+        #restart: unless-stopped
+secrets:
+    destination_email:
+        file: ./secrets/destination_email
+    login:
+        file: ./secrets/login
+    password:
+        file: ./secrets/password

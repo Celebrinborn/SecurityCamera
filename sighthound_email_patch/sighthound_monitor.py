@@ -127,6 +127,16 @@ for f in _secrets_list:
     with open (os.path.join(_secrets_path, f)) as _file:
         secrets[f] = _file.readline().strip()
 
+_sleeptime = 60
+try:
+    _sleeptime = int(os.environ['sleeptime'])
+    logger.info(f'sleeptime is {_sleeptime} seconds')
+except KeyError as e:
+    logger.warning('sleeptime os environ not present, defaulting to checking every 60 seconds')
+except ValueError as e:
+    logger.warning(f'sleeptime os environ variable cannot be cast to int. value is {os.environ["sleeptime"]}. defaulting to 60 seconds')
+logger.debug('waiting 60 seconds before checking again')
+
 logger.info('moving to archive folder')
 os.chdir('archive')
 logger.info(f'folders in directory: {os.listdir()}')
@@ -169,6 +179,5 @@ while True:
             logger.debug(f'no new files detected in camera {camera}')
     
     # raise Exception('breaking loop for testing purposes')
-    logger.debug('waiting 60 seconds before checking again')
-    time.sleep(60)
+    time.sleep(_sleeptime)
 

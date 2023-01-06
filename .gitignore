@@ -6,3 +6,4 @@ secrets
 sighthound_email_patch/_settings.py*
 .vscode
 *__pycache__*
+*test.py

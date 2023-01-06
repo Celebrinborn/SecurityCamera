@@ -1,6 +1,6 @@
 version: '3'
 services:
-    sighthound_email_patch:
+    sighthound_monitor:
         build: ./
         volumes: 
             - E:/test:/archive
@@ -10,7 +10,7 @@ services:
             - login
             - password
         environment:
-            - sleeptime=5
+            - sleeptime=60
             - image_count=1
         #restart: unless-stopped
 secrets:

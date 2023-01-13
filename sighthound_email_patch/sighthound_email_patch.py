@@ -51,6 +51,8 @@ def AddCreds():
     keyring.set_password("sighthound_email_patch_creds", "email_address", email_address)
     password = input('password: ')
     keyring.set_password("sighthound_email_patch_creds", "email_password", password)
+    to_email_address = input('send to email address: ')
+    keyring.set_password("sighthound_email_patch_creds", "email_password", password)
 
 # def SendMail(Port, UserName, UserPassword, sent_from, send_to, attachment_path, subject, body):
 #     msg = MIMEMultipart()

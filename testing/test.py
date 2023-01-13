@@ -39,3 +39,20 @@ logger.addHandler(console_handler)
 logger.info('hello world info')
 logger.error('hello world error')
 
+# try:
+#     os.environ['hello world this will crash']
+#     print('hi')
+#     err = 5/0
+# except KeyError:
+#     logger.error('caught my key error')
+# except BaseException as e:
+#     print('caught my other error')
+#     logger.error('caught my other error', stack_info=True, exc_info=True)
+
+print(int(time.time()))
+l = ['1672168064781.jpg', '1672168064780.jpg', '1672168064779.jpg', '1672168064778.jpg', '1672168064777.jpg', '1672168064776.jpg', '1672168064775.jpg', '1672168064774.jpg', '1672168064773.jpg', '1672168064772.jpg', '1672168064771.jpg', '1672168064770.jpg']
+
+path = os.path.join('16722','thumbs')
+lf = [os.path.join(path, x) for x in l]
+
+print(lf)

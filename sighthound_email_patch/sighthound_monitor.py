@@ -8,6 +8,8 @@ from collections import namedtuple
 import smtplib
 from email.message import EmailMessage
 
+import keyring
+import argparse
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -22,6 +24,15 @@ console_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('-s' '--sleeptime', type=int, help='how long to delay between loops')
+parser.add_argument('-c' '--image_count', type=int, help='number of screenshots to send')
+
+
+args = parser.parse_args()
+
 
 Screenshot_and_Path = namedtuple('Screenshot_and_Path', ['screenshot_file_name', 'screenshot_file_path'])
 def GetNewestScreenshot(root_path) -> Screenshot_and_Path:
@@ -72,14 +83,10 @@ def Send_Email(list_of_files:list, camera_name:str, *_, _isFirst = True):
 
     # create email message
     message = EmailMessage()
-    try:
-        message['Subject'] = f'Sighthound Camera Event Detected at {camera_name}'
-        message['From'] = secrets['login']
-        message['To'] = secrets['destination_email']
-        message.set_content(f"""People detected by {camera_name} at {datetime.now().strftime(r"%Y%m%d_%H%M%S")}""")
-    except KeyError as e:
-        logger.critical(f'unable to send email. missing secret {e}, please check "login" and "destination_email" enviorn vars')
-
+    message['Subject'] = f'Sighthound Camera Event Detected at {camera_name}'
+    message['From'] = keyring.get_password('sighthound_email_patch_creds', 'email_address')
+    message['To'] = keyring.get_password('sighthound_email_patch_creds', 'send_to_email_address')
+    message.set_content(f"""People detected by {camera_name} at {datetime.now().strftime(r"%Y%m%d_%H%M%S")}""")
     # add each attachment
     for filename in list_of_files:
         if os.path.isfile(filename):
@@ -99,11 +106,9 @@ def Send_Email(list_of_files:list, camera_name:str, *_, _isFirst = True):
         server.ehlo()
         server.starttls()
         server.ehlo()
-        server.login(secrets['login'], secrets['password'])
+        server.login(keyring.get_password('sighthound_email_patch_creds', 'email_address')
+            , keyring.get_password('sighthound_email_patch_creds', 'email_password'))
         server.send_message(message)
-    except KeyError as e:
-        # log environ key not existing
-        logger.error(f'secret login or password keys do not exist or are invalid, {e}', exc_info=True, stack_info=True)
     except BaseException as e:
         # if this is the first time wait 30 seconds then try again
         if _isFirst:
@@ -118,23 +123,12 @@ def Send_Email(list_of_files:list, camera_name:str, *_, _isFirst = True):
         # cleanups
         server.quit()
 
-# get secrets
-secrets = {}
-_secrets_path = os.path.join("..", "run", "secrets")
-_secrets_list = os.listdir(_secrets_path)
-for f in _secrets_list:
-    logger.info(f'loading secret {f}')
-    with open (os.path.join(_secrets_path, f)) as _file:
-        secrets[f] = _file.readline().strip()
-
 _sleeptime = 60
 try:
-    _sleeptime = int(os.environ['sleeptime'])
+    _sleeptime = int(args.sleeptime)
     logger.info(f'sleeptime is {_sleeptime} seconds')
-except KeyError as e:
-    logger.warning('sleeptime os environ not present, defaulting to checking every 60 seconds')
-except ValueError as e:
-    logger.warning(f'sleeptime os environ variable cannot be cast to int. value is {os.environ["sleeptime"]}. defaulting to 60 seconds')
+except BaseException as e:
+    logger.warning(e, exc_info=True, stack_info=True)
 logger.debug('waiting 60 seconds before checking again')
 
 logger.info('moving to archive folder')
@@ -164,11 +158,16 @@ while True:
         if GetNewestScreenshot(camera) != Cameras[camera]:
             logger.info(f'new file detected in {camera}')
             _count = 15
-            if 'image_count' in os.environ:
-                if os.environ['image_count'].isdigit():
-                    _count = int(os.environ['image_count'])
+            if 'image_count' in args:
+                if args['image_count'].isdigit():
+                    _count = int(args['image_count'])
                 else:
-                    logger.warning(f'image count environment variable is NOT a digit, is: {os.environ["image_count"]}')
+                    logger.warning(f'image count is not a digit. is: {args["image_count"]}')
+            # if 'image_count' in os.environ:
+            #     if os.environ['image_count'].isdigit():
+            #         _count = int(os.environ['image_count'])
+            #     else:
+            #         logger.warning(f'image count environment variable is NOT a digit, is: {os.environ["image_count"]}')
             screenshots = GetXScreenshots(_count, Cameras[camera])
             if len(screenshots) == 0:
                 logger.error(f'GetXScreenshots failed to get any screenshots at time {int(time.time())}')
@@ -180,4 +179,5 @@ while True:
     
     # raise Exception('breaking loop for testing purposes')
     time.sleep(_sleeptime)
+
 

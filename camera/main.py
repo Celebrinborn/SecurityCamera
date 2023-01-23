@@ -119,12 +119,6 @@ def CreateVideoWriter(camera_name:str, frame_rate:int, cap:cv2.VideoCapture, vid
     video_name = VideoName(camera_name, video_file_extention, video_start_time)
     return cv2.VideoWriter(video_name, fourcc, frame_rate, (frame_width, frame_height)), video_name
 
-# connect to camera
-
-# set up recording
-
-# main loop
-
 # check frame for motion
 # if motion then do stuff
 def Main(Camera_name:str, Camera_path:str, YoloQueue:PriorityQueue, Motion_Threshold:int = 900, Frame_rate = 30):

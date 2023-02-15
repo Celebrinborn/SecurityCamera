@@ -6,10 +6,11 @@ import io
 import queue
 import threading
 import logging
+import pytest
 
 logger = logging.getLogger(__name__)
 
-class ScreenshotSender:
+class ImageRecognitionSender:
     def __init__(self, ip_address: str, screenshot_queue: queue.Queue):
         self.ip_address = ip_address
         self.last_screenshot_sent_at = None
@@ -37,7 +38,8 @@ class ScreenshotSender:
                 self.last_screenshot_sent_at = now
             else:
                 logger.error(f"Failed to send screenshot {filename}: {response.text}")
-                raise Exception(f"Failed to send screenshot: {response.text}")
+                raise requests.HTTPError(f"Failed to send screenshot: {response.text}")
+
 
     def run_async(self):
         asyncio.run(self._run_async())

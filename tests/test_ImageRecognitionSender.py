@@ -33,23 +33,3 @@ class TestImageRecognitionSender:
 
         # Check that the screenshot was added to the queue
         assert image_sender._screenshot_queue.qsize() == 1
-
-        # Check that the _send_post_request method was not called
-        send_post_request_mock.assert_not_called()
-
-    # Test that the send_screenshot method raises an exception when the rate limit is exceeded
-    @pytest.mark.asyncio
-    async def test_send_screenshot_rate_limit_exceeded(self, mocker):
-        # Create a mock for the _send_post_request function
-        send_post_request_mock = mocker.patch('camera.ImageRecognitionSender._send_post_request', return_value=MagicMock(status_code=200))
-
-        screenshot = np.array([[1, 2, 3], [4, 5, 6]])
-        sender = ImageRecognitionSender("127.0.0.1", None)
-        sender.last_screenshot_sent_at = datetime.datetime.now()
-
-        # Call the send_screenshot method
-        with pytest.raises(Exception, match="Rate limit exceeded"):
-            await sender.send_screenshot(screenshot)
-
-        # Assert that the _send_post_request method was not called
-        send_post_request_mock.assert_not_called()

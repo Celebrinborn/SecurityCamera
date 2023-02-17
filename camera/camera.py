@@ -22,11 +22,17 @@ class Camera:
         self._cv2 = cv2_module
         logger.debug('running Camera class init')
         
+    # Define the __enter__ method for the Camera class
     def __enter__(self):
+        # using the dependency injection approach to assist with testing
         self._camera = self._cv2(self._camera_url)
+        
+        # Read the current frame from the camera object and assign it to a variable
+        # to ensure that prevFrame has something to populate later in the application
         _, self.currentFrame = self._camera.read()
-        logger.debug('running Camera class enter')
+        
         return self
+
 
     def __exit__(self, exc_type, exc_value, traceback):
         self._camera.release()

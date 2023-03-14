@@ -12,7 +12,13 @@ services:
             - sleeptime=5
             - camera_url=rtsp://admin:@192.168.50.30:554/h264Preview_01_main
             - camera_name=testcamera
-        #restart: unless-stopped
+        ports:
+          - "5000:5000"
+        networks:
+          - security_camera_network
 secrets:
     example:
         file: ./secrets/example
+
+networks:
+  security_camera_network:

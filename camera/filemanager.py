@@ -10,7 +10,6 @@ import threading
 
 class FileManager:
     _videowriter: cv2.VideoWriter
-    _videowriter_function: typing.Callable
     _frame_count: int
     base_file_location:str
     frame_width:int
@@ -42,7 +41,7 @@ class FileManager:
     def file_to_time(filename:str):
         pass
 
-    def __init__(self, queue:Queue, frame_width:int, frame_height:int, fps:int, root_file_location:str, videowriter_function:typing.Callable) -> None:
+    def __init__(self, frame_width:int, frame_height:int, fps:int, root_file_location:str) -> None:
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.fps = fps
@@ -51,8 +50,7 @@ class FileManager:
             logger.info(f'creating file location at: {root_file_location}')
             os.makedirs(root_file_location)
         self.base_file_location = root_file_location
-        self.queue = queue
-        self._videowriter_function = videowriter_function
+        self.queue = Queue()
     
     def _createVideoWriter(self, filename):
         self._videowriter = cv2.VideoWriter(filename, self.fourcc, self.fps, (self.frame_width, self.frame_height))
@@ -89,3 +87,11 @@ class FileManager:
         thread.start()
         return thread
 
+    def GetQueue(self) -> Queue:
+        """
+        Returns the queue associated with this instance of the file manager.
+
+        Returns:
+            Queue: The associated queue.
+        """
+        return self.queue

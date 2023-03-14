@@ -1,9 +1,16 @@
-import datetime
+import os
+print("Current working directory: ", os.getcwd())
+print("Files and directories in current directory: ", os.listdir())
 
-current_datetime = datetime.datetime.now()
-unix_time = int(datetime.datetime.timestamp(current_datetime))
+import logging
+from log_config import configure_logging
 
-print(current_datetime)
-print(unix_time)
+configure_logging('hello world')
 
-print(current_datetime.strftime(r'%Y%m%d_%H%M%S_%f'))
+logger = logging.getLogger(__name__)
+
+logger.debug('This is a debug message')
+logger.info('This is an info message')
+logger.warning('This is a warning message')
+logger.error('This is an error message')
+logger.critical('This is a critical message')

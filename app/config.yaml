@@ -1,0 +1,3 @@
+camera_name: my_camera
+camera_url: rtsp://admin:@192.168.50.30:554/h264Preview_01_main
+max_fps: 30

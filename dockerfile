@@ -54,7 +54,15 @@ RUN apt-get -qq update \
     && apt-get -qq autoremove \
     && apt-get -qq clean
 
-    RUN pip install torch torchvision torchaudio
+    RUN pip install torch torchvision torchaudio flask PyYAML
 #WORKDIR /app
-ADD ./main.py ./main.py
-CMD [ "python3", "./main.py"]
+ADD ./camera/main.py ./camera/main.py
+ADD ./camera/alerts.py ./camera/alerts.py
+ADD ./camera/camera.py ./camera/camera.py
+ADD ./camera/filemanager.py ./camera/filemanager.py
+ADD ./camera/MotionDetector.py ./camera/MotionDetector.py
+ADD ./camera/ImageRecognitionSender.py ./camera/ImageRecognitionSender.py
+ADD ./flask/app.py ./flask/app.py
+ADD ./flask/config.yaml ./flask/config.yaml
+
+CMD ["python", "./flask/app.py"]

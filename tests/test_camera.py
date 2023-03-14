@@ -18,6 +18,15 @@ class MockVideoCapture:
         pass
 
 # Tests
+def test_Camera_ManualOpenClose():
+    camera = Camera("TestCamera", "test://", 30, cv2_module=MockVideoCapture)
+    camera.close()
+    assert True  # if the test didn't throw an exception, it passed
+
+def test_Camera_ContextManager():
+    with Camera("TestCamera", "test://", 30, cv2_module=MockVideoCapture) as camera:
+        pass
+    assert True  # if the test didn't throw an exception, it passed
 
 def test_Camera_GetFrame():
     with Camera("TestCamera", "test://", 30, cv2_module=MockVideoCapture) as camera:

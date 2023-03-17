@@ -13,7 +13,7 @@ def camera():
 def video_feed():
     def generate_frames():
         print('creating camera')
-        with Camera('main', 0, 25) as camera:        
+        with Camera('main', 0, 25) as camera:   
             print('creating queue')
             frame_queue = Queue()
             print('subscribing queue')

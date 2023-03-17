@@ -22,7 +22,7 @@ def test_Filemanager():
     framequeue = Queue()
 
     print('starting filemanager')
-    FileManager.Start_Filemanager_thread(framequeue, _width, _height, _fps, '.', MockVideoWriter._getVideoWriter)
+    FileManager.Start(framequeue, _width, _height, _fps, '.', MockVideoWriter._getVideoWriter)
 
     print('adding itmes')
     for i in range(42):

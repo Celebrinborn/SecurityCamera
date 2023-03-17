@@ -6,6 +6,7 @@ import os
 from queue import Queue
 import threading
 import time
+import inspect
 
 import typing
 
@@ -94,7 +95,10 @@ class Camera:
         Parameters:
             queue (Queue): The queue to subscribe to the camera instance.
         """
+        caller_name = inspect.stack()[1].function
+        logger.info(f'{caller_name} called Subscribe_queue')
         self._subscription_manager.subscribe_queue(queue)
+
 
     def Unsubscribe_queue(self, queue: Queue):
         """
@@ -138,7 +142,9 @@ class Camera:
         """
         Starts the worker thread that reads from the camera and adds frames to any subscribed queues.
         """
-        pass
+        _caller = inspect.stack()[1]
+        logger.debug(f'Starting Camera.Start() from {_caller.filename}:{_caller.lineno}')
+
         self._killDaemon = False  # initialize flag to False
         def _capture(subscriptionManager:self.SubscriptionManager, fps:int):
             """Captures frames from the camera and adds them to subscribed queues.

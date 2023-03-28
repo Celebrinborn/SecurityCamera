@@ -19,21 +19,29 @@ class FileManager:
     frame_height:int
     fps:int
     queue:Queue
+    _filemanager_thread:threading.Thread
 
     def __init__(self, frame_width: int, frame_height: int, fps: int, root_file_location: str) -> None:
         if not isinstance(frame_width, int):
-            raise TypeError("frame_width should be an integer")
+            raise TypeError(f"frame_width should be an integer, instead got {type(frame_width)}")
         if not isinstance(frame_height, int):
-            raise TypeError("frame_height should be an integer")
+            raise TypeError(f"frame_height should be an integer, instead got {type(frame_height)}")
         if not isinstance(fps, int):
-            raise TypeError("fps should be an integer")
+            raise TypeError(f"fps should be an integer, instead got {type(fps)}")
         if not isinstance(root_file_location, str):
-            raise TypeError("root_file_location should be a string")
+            raise TypeError(f"root_file_location should be a string, instead got {type(root_file_location)}")
+        if not os.path.exists(root_file_location):
+            drive, path = os.path.splitdrive(root_file_location)
+            if not path.startswith(os.path.sep):
+                raise ValueError(f"root_file_location '{root_file_location}' is invalid - missing path separator after drive letter")
+            else: 
+                raise ValueError(f"root_file_location '{root_file_location}' does not exist")
 
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.fps = fps
         self._frame_count = 0
+        self._filemanager_thread = None
         if not os.path.exists(root_file_location):
             logger.info(f'creating file location at: {root_file_location}')
             os.makedirs(root_file_location)
@@ -47,11 +55,7 @@ class FileManager:
         return self
     
     def __exit__(self, exc_type, exc_value, traceback):
-        
-        if isinstance(self._videowriter, cv2.VideoWriter):
-            self._videowriter
-        else:
-            logger.debug(f'type of self.videowriter is {type(self._videowriter)}')
+        self.Stop()
         logger.debug('running filemanager class exit')
 
     def _get_file_sizes(directory):
@@ -78,13 +82,13 @@ class FileManager:
         
         def time_to_file_name(timestamp: Optional[datetime.datetime] = None):
             """
-            Returns a timestamp string in the format of '%Y%m%d_%H%M%S_%f'.
+            Returns a timestamp string in the format of '%Y%m%d_%H%M%S'.
 
             Parameters:
                 timestamp (datetime.datetime, optional): The timestamp to convert to a filename string. Defaults to None.
 
             Returns:
-                str: The timestamp string in the format of '%Y%m%d_%H%M%S_%f'.
+                str: The timestamp string in the format of '%Y%m%d_%H%M%S'.
             """
             if timestamp is None:
                 timestamp = datetime.datetime.utcnow()
@@ -96,7 +100,7 @@ class FileManager:
                 else: # sys.platform == 'linux':
                     _file_extension = 'avi'
                     # Linux-specific code here
-            _file_name = f"{timestamp.strftime(r'%Y%m%d_%H%M%S_%f')}.{_file_extension}"
+            _file_name = f"{timestamp.strftime(r'%Y%m%d_%H%M%S')}.{_file_extension}"
             logger.debug(f'generated filename {_file_name}')
             return _file_name
 
@@ -117,10 +121,10 @@ class FileManager:
             fourcc = cv2.VideoWriter_fourcc(*'FMP4')
             _filename_path = os.path.join(filepath, filename)
             _resolution = (frame_width, frame_height)
-            logger.debug(f'types: {type(_resolution)}, {type(_resolution[0])}, {type(_resolution[1])}')
             logger.debug(f'creating videowriter with filepath {_filename_path}; fourcc{fourcc}; fps: {fps}; resolution {_resolution}')
             _videowriter = cv2.VideoWriter(_filename_path, fourcc, fps, _resolution)
             filemanager._videowriter = _videowriter
+            logger.debug(f'successfully created videowriter with filepath {_filename_path}; fourcc{fourcc}; fps: {fps}; resolution {_resolution}')
             return _videowriter
 
 
@@ -140,19 +144,23 @@ class FileManager:
                                   frame_width=frame_width,
                                   frame_height=frame_height,
                                   filemanager=_filemanager)
+        
         while not kill_the_daemon_event.is_set():
             if _frame_counter > video_length_seconds * fps:
                 _frame_counter = 0
                 end_video(videowriter)
-                start_video(filepath = root_file_location,
-                            filename=time_to_file_name(),
-                            fps=fps,
-                            frame_width=frame_width,
-                            frame_height=frame_height,
-                            filemanager=_filemanager)
+                videowriter = start_video(filepath = root_file_location,
+                                          filename=time_to_file_name(),
+                                          fps=fps,
+                                          frame_width=frame_width,
+                                          frame_height=frame_height,
+                                          filemanager=_filemanager)
             frame = queue.get()
             _frame_counter += 1
+            if _frame_counter % 100 == 0:
+                logger.debug(f'writing frame {_frame_counter} of {video_length_seconds * fps} ({video_length_seconds} seconds at {fps})')
             write(videowriter, frame)
+        logger.debug('kill the demon event is True', stack_info=True)
         end_video(videowriter)
 
     
@@ -163,23 +171,31 @@ class FileManager:
         logging.debug(f"type of frame_width: {type(self.frame_width)}")
         logging.debug(f"type of frame_height: {type(self.frame_height)}")
 
-        thread = threading.Thread(target=FileManager._start_filemanager_thread, name="Filemanager_Thread", daemon=True,
+
+        logger.info(f'starting filemanager thread with fps {self.fps}')
+        self._filemanager_thread = threading.Thread(target=FileManager._start_filemanager_thread, name="Filemanager_Thread", daemon=True,
             kwargs={
                 'kill_the_daemon_event': self._kill_the_daemon_event,
                 'queue': self.GetQueue(),
                 'fps': self.fps,
                 'root_file_location': self.base_file_location,
-                'video_length_seconds': self.fps * 60 * 5,
+                'video_length_seconds': 30,
                 'frame_width': self.frame_width,
                 'frame_height': self.frame_height,
                 '_filemanager': self
             })
         logger.debug('starting filemanager daemon')
-        thread.start()
-        return thread
+        self._filemanager_thread.start()
     def Stop(self):
         logger.debug('killing daemon')
+        # set the switch make the daemon thread self abort
         self._kill_the_daemon_event.set()
+
+        # block until the thread dies
+        if self._filemanager_thread is not None:
+            self._filemanager_thread.join()
+        else:
+            logger.warning('filemanager Stop was called however thread is already dead', stack_info=True)
 
     def GetQueue(self) -> Queue:
         """

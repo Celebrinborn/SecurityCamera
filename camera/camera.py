@@ -251,7 +251,7 @@ if __name__ == '__main__':
         from filemanager import FileManager
 
         with FileManager(camera.GetFrameWidth(), camera.GetFrameHeight(), 30, 
-                         os.path.join('E:','security_camera','data')) as filemanager:
+                         os.path.join('E:','security_camera','data'), 'test_camera') as filemanager:
             
             logger.info('subscribing filemanager')
             camera.Subscribe_queue(filemanager.GetQueue())

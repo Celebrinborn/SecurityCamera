@@ -21,7 +21,7 @@ class FileManager:
     queue:Queue
     _filemanager_thread:threading.Thread
 
-    def __init__(self, frame_width: int, frame_height: int, fps: int, root_file_location: str) -> None:
+    def __init__(self, frame_width: int, frame_height: int, fps: int, root_file_location: str, camera_name:str) -> None:
         if not isinstance(frame_width, int):
             raise TypeError(f"frame_width should be an integer, instead got {type(frame_width)}")
         if not isinstance(frame_height, int):
@@ -42,6 +42,7 @@ class FileManager:
         self.fps = fps
         self._frame_count = 0
         self._filemanager_thread = None
+        self.camera_name = camera_name
         if not os.path.exists(root_file_location):
             logger.info(f'creating file location at: {root_file_location}')
             os.makedirs(root_file_location)
@@ -69,7 +70,7 @@ class FileManager:
         # note: use utcnow() NOT now()
         return timestamp.strftime(r'%Y%m%d_%H')
 
-    def _start_filemanager_thread(kill_the_daemon_event:threading.Event, queue:Queue, fps:int, root_file_location:str, video_length_seconds:int, frame_width:int, frame_height:int, _filemanager):
+    def _start_filemanager_thread(kill_the_daemon_event:threading.Event, queue:Queue, fps:int, root_file_location:str, video_length_seconds:int, frame_width:int, frame_height:int, camera_name:str, _filemanager):
         assert isinstance(frame_width, int), 'frame_width is not int'
         assert isinstance(frame_height, int), 'frame_height is not int'
 
@@ -104,9 +105,9 @@ class FileManager:
             logger.debug(f'generated filename {_file_name}')
             return _file_name
 
-        def start_video(filepath:str, filename:str, fps:int, frame_width:int, frame_height:int, filemanager:FileManager) -> cv2.VideoWriter:
-            if not isinstance(filepath, str):
-                raise TypeError(f"Expected 'filepath' argument to be of type 'str', but got {type(filepath)} instead.")
+        def start_video(base_filepath:str, filename:str, fps:int, frame_width:int, frame_height:int, filemanager:FileManager, camera_name:str) -> cv2.VideoWriter:
+            if not isinstance(base_filepath, str):
+                raise TypeError(f"Expected 'filepath' argument to be of type 'str', but got {type(base_filepath)} instead.")
             if not isinstance(filename, str):
                 raise TypeError(f"Expected 'filename' argument to be of type 'str', but got {type(filename)} instead.")
             if not isinstance(fps, int):
@@ -119,7 +120,19 @@ class FileManager:
                 raise TypeError(f"Expected 'filemanager' argument to be of type 'FileManager', but got {type(filemanager)} instead.")
             
             fourcc = cv2.VideoWriter_fourcc(*'FMP4')
-            _filename_path = os.path.join(filepath, filename)
+            if not os.path.exists(base_filepath):
+                raise Exception("Base filepath does not exist: {}".format(base_filepath))
+
+            # Create folder path
+            folder_path = os.path.join(base_filepath, camera_name, datetime.datetime.utcnow().strftime("%Y%m%d_%H"))
+
+            # Check if the folder path exists, if not create it
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+
+            # Join the filepath
+            _filename_path = os.path.join(folder_path, filename)
+            #  = os.path.join(base_filepath,camera_name, datetime.datetime.utcnow().strftime("%Y%m%d_%H"), filename) # old, remove
             _resolution = (frame_width, frame_height)
             logger.debug(f'creating videowriter with filepath {_filename_path}; fourcc{fourcc}; fps: {fps}; resolution {_resolution}')
             _videowriter = cv2.VideoWriter(_filename_path, fourcc, fps, _resolution)
@@ -138,27 +151,29 @@ class FileManager:
         logger.debug('filemanager daemon has started')
 
         _frame_counter = 0
-        videowriter = start_video(filepath = root_file_location,
+        videowriter = start_video(base_filepath = root_file_location,
                                   filename=time_to_file_name(),
                                   fps=fps,
                                   frame_width=frame_width,
                                   frame_height=frame_height,
-                                  filemanager=_filemanager)
+                                  filemanager=_filemanager,
+                                  camera_name=camera_name)
         
         while not kill_the_daemon_event.is_set():
             if _frame_counter > video_length_seconds * fps:
                 _frame_counter = 0
                 end_video(videowriter)
-                videowriter = start_video(filepath = root_file_location,
+                videowriter = start_video(base_filepath = root_file_location,
                                           filename=time_to_file_name(),
                                           fps=fps,
                                           frame_width=frame_width,
                                           frame_height=frame_height,
-                                          filemanager=_filemanager)
+                                          filemanager=_filemanager,
+                                          camera_name=camera_name)
             frame = queue.get()
             _frame_counter += 1
-            if _frame_counter % 100 == 0:
-                logger.debug(f'writing frame {_frame_counter} of {video_length_seconds * fps} ({video_length_seconds} seconds at {fps})')
+            # if _frame_counter % 100 == 0:
+            #     logger.debug(f'writing frame {_frame_counter} of {video_length_seconds * fps} ({video_length_seconds} seconds at {fps})')
             write(videowriter, frame)
         logger.debug('kill the demon event is True', stack_info=True)
         end_video(videowriter)
@@ -182,6 +197,7 @@ class FileManager:
                 'video_length_seconds': 30,
                 'frame_width': self.frame_width,
                 'frame_height': self.frame_height,
+                'camera_name': self.camera_name,
                 '_filemanager': self
             })
         logger.debug('starting filemanager daemon')

@@ -49,7 +49,12 @@ class Camera:
         logger.debug('running Camera class init')
         
         # using the dependency injection approach to assist with testing
-        self._camera = self._cv2(self._camera_url)
+        try:
+            # using the dependency injection approach to assist with testing
+            self._camera = self._cv2(self._camera_url)
+        except ConnectionRefusedError as e:
+            logger.exception(f'camera {camera_name} at {camera_url} refused to connect. There may already be an active connection to the camera')
+            raise NotImplementedError("error handling for a connection refusal has not been implemented yet") from e
 
         # check if camera opened successfully
         if not self._camera.isOpened():
@@ -164,8 +169,9 @@ class Camera:
                 self._subscribed_queues.remove(queue)
 
         def _add_frame_to_queues(self, frame: np.ndarray):
+            assert isinstance(frame, np.ndarray), 'camera is attempting to put a non-ndarray on the queues'
             for queue in self._subscribed_queues:
-                queue.put(frame)
+                queue.put(frame.copy())
     
     def Start(self):
         """

@@ -2,12 +2,13 @@ import cv2
 import logging
 import threading
 from queue import Queue
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 class MotionDetector:
-    _killDaemon: bool  # flag to abort capture daemon
-    def __init__(self, frame, threshold=5000, mask=None):
+    _kill_the_daemon_event: threading.Event()  # flag to abort capture daemon
+    def __init__(self, threshold=1000, mask=None):
         """
         Constructor for MotionDetector class.
 
@@ -17,16 +18,20 @@ class MotionDetector:
             mask: ndarray representing a mask to apply to the frame. Defaults to None.
         """
 
-        self._prev_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        self._prev_frame = cv2.GaussianBlur(self._prev_frame, (21, 21), 0)
         self.threshold = threshold
         self.mask = mask
 
-        # Get frame dimensions from initial frame
-        self.frame_height, self.frame_width = self._prev_frame.shape[:2]
-
         # Initialize the queue object
         self.queue = Queue()
+        self._kill_the_daemon_event = threading.Event()
+
+    def __enter__(self):
+        logger.debug('running motionDetector class enter')
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.Stop()
+        logger.debug('running motionDetector class exit')
 
     def GetQueue(self):
         """
@@ -35,89 +40,111 @@ class MotionDetector:
         Returns:
             Queue: The associated queue object.
         """
+        logger.debug(f'retriving motion_detector queue {type(self.queue)}')
         return self.queue
     
-    def detect_motion(self, prev_frame, current_frame):
-        """
-        Detect motion between the current frame and the previous frame.
-
-        Args:
-            current_frame: ndarray representing the current frame to use for motion detection.
-
-        Returns:
-            Tuple of boolean (whether motion is detected or not) and the current frame.
-        """
-        if current_frame is None:
-            logger.warning('detect_motion was passed a None current_frame')
-            return False, current_frame
-
-        # Check that current frame is same size as previous frame
-        if current_frame.shape[:2] != prev_frame[:2]:
-            logger.warning('current_frame is not same size as previous frame')
-            return False, current_frame
-
-        # Scale frames to 100px height
-        height_ratio = 100 / self.frame_height
-        width_ratio = 100 / self.frame_width
-
-        area_ratio = (self.frame_height * self.frame_width)
-
-        # Convert frames to grayscale
-        background = prev_frame
-        grey = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-
-        # Apply Gaussian blur to reduce noise
-        background = cv2.GaussianBlur(background, (21, 21), 0)
-        blured_grey = cv2.GaussianBlur(grey, (21, 21), 0)
-
-        # Find absolute difference between frames
-        diff = cv2.absdiff(background, blured_grey)
-
-        # Apply threshold to difference image
-        thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)[1]
-
-        # Dilate thresholded image to fill in holes
-        thresh = cv2.dilate(thresh, None, iterations=2)
-
-        # Find contours in thresholded image
-        cnts, res = cv2.findContours(thresh.copy(),
-                                     cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Check if motion is detected
-        is_motion = False
-        bounding_image = current_frame.copy()
-        for contour in cnts:
-            if cv2.contourArea(contour) < self.threshold:
-                continue
-            is_motion = True
-
-        # Update previous frame
-        prev_frame = blured_grey.copy()
-
-        return is_motion, current_frame
     
-    def _start_motion_detection_thread(self, queue:Queue, prev_frame):
-        while True:
-            if self._killDaemon:
-                print('killing motion detection demon')
-                break
-            current_frame = queue.get()
-            isMotion = self.detect_motion(prev_frame, current_frame)
+    def _start_motion_detection_thread(queue:Queue, _kill_the_daemon_event: threading.Event(), threshold:int):
+        def detect_motion(threshold, frame, drawFrame=False):
+            """
+            Generator function that detects motion between frames.
+
+            Args:
+                threshold (int): motion threshold to trigger detection
+                frame (ndarray): first frame to initialize previous frame
+
+            Yields:
+                bool: True if motion is detected, False otherwise
+            """
+            frame_height, frame_width, _ = frame.shape
+            prev_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            current_frame = frame # preload the frame
+            while True:
+
+                # Convert frames to grayscale
+                grey = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+                prev_frame = cv2.GaussianBlur(prev_frame, (21, 21), 0)
+                blured_grey = cv2.GaussianBlur(grey, (21, 21), 0)
+
+                # Find absolute difference between frames
+                diff = cv2.absdiff(prev_frame, blured_grey)
+
+                # Apply threshold to difference image
+                thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)[1]
+
+                # Dilate thresholded image to fill in holes
+                thresh = cv2.dilate(thresh, None, iterations=2)
+
+                # Find contours in thresholded image
+                cnts, res = cv2.findContours(thresh.copy(),
+                                            cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                # Check if motion is detected
+                bounding_image = None
+                is_motion = False
+                if drawFrame:
+                    bounding_image = current_frame.copy()
+                for contour in cnts:
+                    if cv2.contourArea(contour) < threshold:
+                        continue
+                    is_motion = True
+                    if drawFrame:
+                        # Draw bounding box on frame with motion
+                        (x, y, w, h) = cv2.boundingRect(contour)
+                        cv2.rectangle(bounding_image, (x, y), (x + w, y + h), (0, 0, 255), 2)
+
+                prev_frame = grey  # update previous frame with current frame
+
+                if drawFrame:
+                    current_frame = yield is_motion, bounding_image
+                else:
+                    current_frame = yield is_motion, None
+
+        # get first frame
+        current_frame = queue.get()
+        logger.debug(f'initial pull of queue from motiondetector is {type(current_frame)}')
+
+        # type check
+        if not isinstance(current_frame, np.ndarray): raise TypeError(f'currentframe is type {type(current_frame)} should be np.ndarray')
+
+        # initiate motion_detector
+        logger.debug('initiating detect_motion')
+        detector = detect_motion(threshold= threshold, frame=current_frame, drawFrame=True) # TODO REMOVE DRAWFRAME
+        next(detector)
+        while not _kill_the_daemon_event.is_set():
+            # logger.debug(f'current frame type: {type(current_frame)}')
+            frame = queue.get()
+            if not isinstance(frame, np.ndarray):
+                logger.warning(f'queue has a non-ndarray passed. type was {type(frame)}')
+                continue
+            isMotion, _frame = detector.send(frame)
+
+            # debug code, comment out in production!!!!
+            cv2.imshow('motion', _frame)
+            cv2.waitKey(1)
+
+            
+
             if isMotion:
-                print('motion detected!!!')
+                logger.debug('motion detected')
                 #todo: NEED TO IMPLEMENT SEND LOGIC
+            else:
+                logger.debug('no motion detected')
+        logger.warning('shutting down motion detector object')
     
     def Start(self):
-        self._killDaemon = False  # initialize flag to False
-        thread = threading.Thread(target=self._start_motion_detection_thread, 
-                                  name="motion_detection_thread", daemon=True
-            , args=(self.queue, self._prev_frame))
+        logger.debug(f'type of queue is {type(self.queue)}')
+        thread = threading.Thread(target=MotionDetector._start_motion_detection_thread,
+            name="motion_detection_thread",
+            daemon=True,
+            args=(self.queue, self._kill_the_daemon_event, self.threshold))
         thread.start()
+
+
     def Stop(self):
         """
         Stops the camera worker daemon
         """
-        pass
-        self._killDaemon = True  # set flag to stop capture thread
+        self._kill_the_daemon_event.set()  # set flag to stop capture thread
 
 

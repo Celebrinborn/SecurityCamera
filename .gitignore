@@ -10,3 +10,4 @@ sighthound_email_patch/_settings.py*
 yolov5*
 *.avi
 *filemap*
+.pytest_cache

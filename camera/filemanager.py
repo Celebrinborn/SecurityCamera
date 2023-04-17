@@ -194,7 +194,7 @@ class FileManager:
                 'queue': self.GetQueue(),
                 'fps': self.fps,
                 'root_file_location': self.base_file_location,
-                'video_length_seconds': 30,
+                'video_length_seconds': 15 * 60,
                 'frame_width': self.frame_width,
                 'frame_height': self.frame_height,
                 'camera_name': self.camera_name,

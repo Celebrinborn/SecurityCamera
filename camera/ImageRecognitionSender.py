@@ -7,7 +7,6 @@ from queue import Queue
 import queue
 import threading
 import logging
-import pytest
 import uuid
 from typing import List, NamedTuple, Tuple
 

@@ -109,7 +109,7 @@ class MotionDetector:
 
         # initiate motion_detector
         logger.debug('initiating detect_motion')
-        detector = detect_motion(threshold= threshold, frame=current_frame, drawFrame=True) # TODO REMOVE DRAWFRAME
+        detector = detect_motion(threshold= threshold, frame=current_frame, drawFrame=False)
         next(detector)
         while not _kill_the_daemon_event.is_set():
             # logger.debug(f'current frame type: {type(current_frame)}')
@@ -119,9 +119,9 @@ class MotionDetector:
                 continue
             isMotion, _frame = detector.send(frame)
 
-            # debug code, comment out in production!!!!
-            cv2.imshow('motion', _frame)
-            cv2.waitKey(1)
+            # # debug code, comment out in production!!!!
+            # cv2.imshow('motion', _frame)
+            # cv2.waitKey(1)
 
             
 

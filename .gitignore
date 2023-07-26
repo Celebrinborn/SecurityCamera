@@ -6,4 +6,13 @@ secrets
 sighthound_email_patch/_settings.py*
 .vscode
 *__pycache__*
-*test.py
+object_detection/data*
+object_detection/env*
+object_detection/logs*
+object_detection/models*
+*.pt
+
+image_recognition/models*
+
+*.avi
+*.mp4

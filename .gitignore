@@ -7,3 +7,10 @@ sighthound_email_patch/_settings.py*
 .vscode
 *__pycache__*
 *test.py
+yolov5*
+*.avi
+*filemap*
+.pytest_cache
+yolov5*
+# ignore model files as I do not modify them and they are extremely large
+*.pt 

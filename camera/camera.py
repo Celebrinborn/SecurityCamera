@@ -8,6 +8,9 @@ import threading
 import time
 import inspect
 
+from camera.frame import Frame
+import warnings
+
 import typing
 
 class Camera:
@@ -118,7 +121,9 @@ class Camera:
         while True: #self._camera == True:
             ret, newFrame = self._camera.read()
             self.prevFrame = self.currentFrame.copy()
-            self.currentFrame = newFrame
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=UserWarning)
+                self.currentFrame = Frame(newFrame)
             yield self.currentFrame
         return self.currentFrame
     
@@ -254,9 +259,9 @@ if __name__ == '__main__':
 
 
         # create filemanager
-        from filemanager import FileManager
+        from filemanager import VideoFileManager
 
-        with FileManager(camera.GetFrameWidth(), camera.GetFrameHeight(), 30, 
+        with VideoFileManager(camera.GetFrameWidth(), camera.GetFrameHeight(), 30, 
                          os.path.join('E:','security_camera','data'), 'test_camera') as filemanager:
             
             logger.info('subscribing filemanager')

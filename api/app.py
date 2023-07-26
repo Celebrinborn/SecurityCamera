@@ -5,7 +5,7 @@ import cv2
 from flask import Flask, Response, render_template, current_app
 import numpy as np
 from camera.camera import Camera
-from camera.filemanager import FileManager
+from camera.filemanager import VideoFileManager
 from camera.MotionDetector import MotionDetector
 
 import logging
@@ -59,11 +59,22 @@ try:
     camera_name = 'webcam'
     fps = 10
     camera_url = 0
+
+    _root_file_location = os.path.abspath(os.path.join('data', camera_name, 'video_cache'))
+    try:
+        if not os.path.exists(_root_file_location):
+            os.makedirs(_root_file_location)
+            logger.info(f"Created directory: {_root_file_location}")
+        else:
+            logger.info(f"Directory already exists: {_root_file_location}")
+    except OSError as e:
+        logger.exception(f"Error creating directory: {e}")
+
     with Camera(camera_name=camera_name, camera_url = camera_url, max_fps=fps) as camera:
-        with FileManager(frame_width= 640, frame_height= 480, fps= fps,
-                        root_file_location= os.path.join('E:', 'security_camera','data','test_camera_webapp'), 
+        with VideoFileManager(frame_width= 640, frame_height= 480, fps= fps,
+                        root_file_location=_root_file_location, 
                         camera_name='webcam') as file_manager:
-            with MotionDetector() as motion_detector:
+            with MotionDetector(camera_name=camera_name, threshold=1000, mask=None, detector_post_cooldown_seconds=1.0) as motion_detector:
                 camera.Subscribe_queue(file_manager.GetQueue())
 
                 _queue = motion_detector.GetQueue()

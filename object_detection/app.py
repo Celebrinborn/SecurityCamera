@@ -10,6 +10,8 @@ from uuid import UUID
 import base64
 import cv2
 
+import json
+
 import logging
 from log_config import configure_logging
 
@@ -43,6 +45,34 @@ async def startup_event():
     logger.info("Starting daemon thread to consume items from priority queue")
     thread = threading.Thread(target=consume_queue, daemon=True)
     thread.start()
+@app.get("/recorded_guids")
+async def get_recorded_guids():
+    """Endpoint to retrieve a comma-delimited list of recorded GUIDs"""
+    db_name = os.path.join('data', 'object_detection.sqlite3')
+    try:
+        # Connect to the database
+        conn = sqlite3.connect(db_name)
+
+        # Create a cursor
+        cur = conn.cursor()
+
+        # Execute the query to fetch all recorded GUIDs
+        cur.execute("SELECT image_id FROM detection_results")
+
+        # Fetch all records
+        results = cur.fetchall()
+
+        # Extract the GUIDs and join them into a comma-delimited string
+        recorded_guids = ",".join([record[0] for record in results])
+
+        return recorded_guids
+
+    except sqlite3.Error as e:
+        logger.error(f"An error occurred while fetching recorded GUIDs: {e}")
+
+    finally:
+        conn.close()
+
 
 @app.post("/detect_objects", status_code=202)
 async def detect_objects(request: DetectionRequest):
@@ -130,9 +160,13 @@ def image_id_exists(conn, image_id):
 
     # Fetch one record
     result = cur.fetchone()
+    
+    logger.debug(f'result is: {result}')
 
     # If a record is found, return True, else return False
-    return result is not None
+    _is_in_db = result is None
+    logger.debug(f'was record found {_is_in_db}')
+    return _is_in_db
 
 
 def send_results(results):
@@ -182,6 +216,7 @@ def send_results(results):
             _create_object_detection_table(conn)
         
         # save results
+        logger.debug(f'saving results to db: id: {str(results)}')
         save_results_to_db(conn, results)
     except sqlite3.Error as e:
         logger.error(f'an error occured with sqlite3 while attempting to save detection_results {e}', exc_info=True, stack_info=True)

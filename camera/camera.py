@@ -12,6 +12,7 @@ from camera.frame import Frame
 import warnings
 
 import typing
+from typing import Generator, Optional
 
 class Camera:
     """
@@ -23,8 +24,8 @@ class Camera:
     _max_fps: int
     _killDaemon: bool  # flag to abort capture daemon
 
-    prevFrame: np.ndarray
-    currentFrame: np.ndarray
+    prevFrame: Frame
+    currentFrame: Frame
 
     def __init__(self, camera_name:str, camera_url:str, max_fps:int, cv2_module: typing.Type[cv2.VideoCapture]=cv2.VideoCapture) -> None:
         """
@@ -36,15 +37,6 @@ class Camera:
             max_fps (int): The maximum number of frames per second that the camera should capture.
             cv2_module (cv2.VideoCapture): The module to use for capturing the frames.
         """
-
-        # log where it was called from to catch an annoying bug
-        caller_frame = inspect.currentframe().f_back
-        caller_filename = caller_frame.f_code.co_filename
-        caller_line_no = caller_frame.f_lineno
-        caller_name = caller_frame.f_code.co_name
-        logger.debug(f'{caller_filename}:{caller_line_no} {caller_name} called camera init')
-
-
         self._camera_name = camera_name
         self._camera_url = camera_url
         self._max_fps = max_fps
@@ -70,7 +62,10 @@ class Camera:
         # to ensure that prevFrame has something to populate later in the application
         logger.debug('reading first frame from camera')
         for i in range (5):
-            _successful_camera_read, self.currentFrame = self._camera.read()
+            _successful_camera_read, _frame = self._camera.read()
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=UserWarning)
+                self.currentFrame = Frame(_frame)
             if _successful_camera_read:
                 logger.info('successfully read first frame from camera')
                 break
@@ -110,22 +105,29 @@ class Camera:
         self.Stop()
         self.close()
 
-    def GetFrame(self) -> np.ndarray:
+    def GetFrame(self) -> Generator[Frame, None, None]:
         """
         Captures frames from the camera.
 
         Returns:
-            np.ndarray: The current frame from the camera.
+            Frame: The current frame from the camera.
         """
         # logger.debug('starting Camera class getframe')
         while True: #self._camera == True:
-            ret, newFrame = self._camera.read()
-            self.prevFrame = self.currentFrame.copy()
+            # read the camera frame to a temp variable
+            ret, _frame = self._camera.read()
+            if not ret:
+                # if a bad frame is sent then continue
+                continue
+            # suppress the Frame creation warning and create the frame
             with warnings.catch_warnings():
                 warnings.filterwarnings('ignore', category=UserWarning)
-                self.currentFrame = Frame(newFrame)
+                newFrame = Frame(_frame)
+            # assign the prev frame to what the current frame is
+            self.prevFrame = self.currentFrame
+            # now assign the current frame to the newly read frame
+            self.currentFrame = newFrame
             yield self.currentFrame
-        return self.currentFrame
     
     def Subscribe_queue(self, queue: Queue):
         """
@@ -259,9 +261,9 @@ if __name__ == '__main__':
 
 
         # create filemanager
-        from filemanager import VideoFileManager
+        from filemanager import VideoFileManagerOld
 
-        with VideoFileManager(camera.GetFrameWidth(), camera.GetFrameHeight(), 30, 
+        with VideoFileManagerOld(camera.GetFrameWidth(), camera.GetFrameHeight(), 30, 
                          os.path.join('E:','security_camera','data'), 'test_camera') as filemanager:
             
             logger.info('subscribing filemanager')

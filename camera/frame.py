@@ -5,12 +5,12 @@ import time
 import io
 import json
 import base64
-
+from typing import Optional, Union
 
 class Frame(np.ndarray):
     guid: uuid.UUID
     creation_timestamp: float
-    def __new__(cls, input_array, *, GUID:str = None, creation_timestamp:float = None):
+    def __new__(cls, input_array, *, GUID:Union[uuid.UUID, None] = None, creation_timestamp:Optional[float] = None):
         """
         Overriding this method allows us to provide additional attributes (GUID and timestamp) to our frame data, which are critical for tracking each frame individually across its life cycle and associating it with its creation moment. The expectation here is that the `input_array` argument is a suitable representation of the image data, otherwise the class may not behave as expected.
         """

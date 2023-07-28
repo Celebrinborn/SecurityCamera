@@ -5,7 +5,7 @@ import cv2
 from flask import Flask, Response, render_template, current_app
 import numpy as np
 from camera.camera import Camera
-from camera.filemanager import VideoFileManager
+from camera.filemanager import VideoFileManagerOld
 from camera.MotionDetector import MotionDetector
 
 import logging
@@ -71,7 +71,7 @@ try:
         logger.exception(f"Error creating directory: {e}")
 
     with Camera(camera_name=camera_name, camera_url = camera_url, max_fps=fps) as camera:
-        with VideoFileManager(frame_width= 640, frame_height= 480, fps= fps,
+        with VideoFileManagerOld(frame_width= 640, frame_height= 480, fps= fps,
                         root_file_location=_root_file_location, 
                         camera_name='webcam') as file_manager:
             with MotionDetector(camera_name=camera_name, threshold=1000, mask=None, detector_post_cooldown_seconds=1.0) as motion_detector:

@@ -6,7 +6,6 @@ secrets
 sighthound_email_patch/_settings.py*
 .vscode
 *__pycache__*
-<<<<<<< HEAD
 object_detection/data*
 object_detection/env*
 object_detection/logs*
@@ -17,13 +16,3 @@ image_recognition/models*
 
 *.avi
 *.mp4
-=======
-*test.py
-yolov5*
-*.avi
-*filemap*
-.pytest_cache
-yolov5*
-# ignore model files as I do not modify them and they are extremely large
-*.pt 
->>>>>>> 88258d37f900c26bcf04ac268212af66695c84b8

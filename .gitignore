@@ -16,3 +16,5 @@ image_recognition/models*
 
 *.avi
 *.mp4
+
+.pytest_cache*

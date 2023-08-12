@@ -18,3 +18,6 @@ image_recognition/models*
 *.mp4
 
 .pytest_cache*
+
+# keep config files
+!.vscode/launch.json

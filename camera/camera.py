@@ -12,7 +12,39 @@ from camera.frame import Frame
 import warnings
 
 import typing
-from typing import Generator, Optional
+from typing import Generator, Optional, Union
+
+
+class SubscriptionManager:
+    """
+    Manages a list of subscribed Queues and provides methods to add or remove queues.
+
+    Attributes:
+        _subscribed_queues (List[Queue]): A list of subscribed Queue objects.
+    
+    Methods:
+        subscribe_queue(queue: Queue) -> None: Adds a new queue to the list of subscribed queues.
+        unsubscribe_queue(queue: Queue) -> None: Removes a queue from the list of subscribed queues.
+        _add_frame_to_queues(frame: np.ndarray) -> None: Puts a new frame into all subscribed queues.
+    """
+    _subscribed_queues: typing.List[Queue]
+
+    def __init__(self):
+        self._subscribed_queues = []
+
+    def subscribe_queue(self, queue: Queue):
+        if queue not in self._subscribed_queues:
+            self._subscribed_queues.append(queue)
+
+    def unsubscribe_queue(self, queue: Queue):
+        if queue in self._subscribed_queues:
+            self._subscribed_queues.remove(queue)
+
+    def _add_frame_to_queues(self, frame: np.ndarray):
+        assert isinstance(frame, np.ndarray), 'camera is attempting to put a non-ndarray on the queues'
+        for queue in self._subscribed_queues:
+            queue.put(frame.copy())
+    
 
 class Camera:
     """
@@ -20,14 +52,14 @@ class Camera:
     """
     _camera: cv2.VideoCapture
     _camera_name:str
-    _camera_url: str
+    _camera_url: Union[str, int]
     _max_fps: int
     _killDaemon: bool  # flag to abort capture daemon
 
     prevFrame: Frame
     currentFrame: Frame
 
-    def __init__(self, camera_name:str, camera_url:str, max_fps:int, cv2_module: typing.Type[cv2.VideoCapture]=cv2.VideoCapture) -> None:
+    def __init__(self, camera_name:str, camera_url:Union[str, int], max_fps:int, cv2_module: typing.Type[cv2.VideoCapture]=cv2.VideoCapture) -> None:
         """
         Initializes the camera instance.
 
@@ -81,7 +113,9 @@ class Camera:
 
         self._frame_height, self._frame_width, _ = self.currentFrame.shape
 
-        self._subscription_manager = self.SubscriptionManager()
+        self._subscription_manager = SubscriptionManager()
+
+        self.Start()
 
         
     # Define the __enter__ method for the Camera class
@@ -149,37 +183,6 @@ class Camera:
             queue (Queue): The queue to unsubscribe from the camera instance.
         """
         self._subscription_manager.unsubscribe_queue(queue)
-    
-    class SubscriptionManager:
-        """
-        Manages a list of subscribed Queues and provides methods to add or remove queues.
-
-        Attributes:
-            _subscribed_queues (List[Queue]): A list of subscribed Queue objects.
-        
-        Methods:
-            subscribe_queue(queue: Queue) -> None: Adds a new queue to the list of subscribed queues.
-            unsubscribe_queue(queue: Queue) -> None: Removes a queue from the list of subscribed queues.
-            _add_frame_to_queues(frame: np.ndarray) -> None: Puts a new frame into all subscribed queues.
-        """
-        _subscribed_queues: typing.List[Queue]
-
-        def __init__(self):
-            self._subscribed_queues = []
-
-        def subscribe_queue(self, queue: Queue):
-            if queue not in self._subscribed_queues:
-                self._subscribed_queues.append(queue)
-
-        def unsubscribe_queue(self, queue: Queue):
-            if queue in self._subscribed_queues:
-                self._subscribed_queues.remove(queue)
-
-        def _add_frame_to_queues(self, frame: np.ndarray):
-            assert isinstance(frame, np.ndarray), 'camera is attempting to put a non-ndarray on the queues'
-            for queue in self._subscribed_queues:
-                queue.put(frame.copy())
-    
     def Start(self):
         """
         Starts the worker thread that reads from the camera and adds frames to any subscribed queues.
@@ -188,7 +191,7 @@ class Camera:
         logger.debug(f'Starting Camera.Start() from {_caller.filename}:{_caller.lineno}')
 
         self._killDaemon = False  # initialize flag to False
-        def _capture(subscriptionManager:self.SubscriptionManager, fps:int):
+        def _capture(subscriptionManager:SubscriptionManager, fps:int):
             """Captures frames from the camera and adds them to subscribed queues.
 
             Args:
@@ -245,6 +248,8 @@ if __name__ == '__main__':
     import sys
     import logging
     from log_config import configure_logging
+
+    from camera.filemanager import VideoFileManager
     configure_logging()
     
 

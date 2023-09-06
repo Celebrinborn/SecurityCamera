@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Union, Iterable, cast, TextIO, Optional
 import json
-from collections import namedtuple
+from camera.resolution import Resolution
 
 @dataclass
 class File_Pair:
@@ -376,7 +376,7 @@ class VideoFileManagerOld:
         """
         return self.queue
     
-Resolution = namedtuple('Resolution', ['width', 'height'])
+
 
 class VideoFileManager:
     _videowriter:Optional[cv2.VideoWriter]

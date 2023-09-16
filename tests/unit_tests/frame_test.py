@@ -107,3 +107,29 @@ def test_save_and_load_frame(GetFrame, GetImage):
     assert frame.guid == loaded_frame.guid
     assert frame.creation_timestamp == loaded_frame.creation_timestamp
     assert frame == loaded_frame, 'frame lost after saving and loading'
+
+def test_preserve_identity_with(GetFrame):
+    import cv2  # Assuming OpenCV is available for this test
+
+    # Get the original frame from the fixture
+    frame = GetFrame
+
+    # Apply some transformation using OpenCV (in this case, converting the frame to grayscale)
+    grayscale_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Use the preserve_identity_with method to obtain a new Frame object with the grayscale image
+    with pytest.warns(None) as record:  # This expects no warnings
+        new_frame = frame.preserve_identity_with(grayscale_image)
+
+    # Check that no warnings were raised
+    assert len(record) == 0, "Unexpected warnings raised during transformation"
+
+    # Check that the new_frame is an instance of Frame
+    assert isinstance(new_frame, Frame), "Transformed object is not an instance of Frame"
+
+    # Check that the guid and creation_timestamp are preserved
+    assert new_frame.guid == frame.guid, "GUIDs do not match after transformation"
+    assert new_frame.creation_timestamp == frame.creation_timestamp, "Timestamps do not match after transformation"
+
+    # Optionally, verify the data (to ensure the grayscale conversion worked as expected)
+    assert np.array_equal(new_frame, grayscale_image), "Data mismatch after transformation"

@@ -103,6 +103,18 @@ class Frame(np.ndarray):
             frame = Frame(arr, GUID=uuid.UUID(json_obj['GUID']), creation_timestamp=float(json_obj['creation_timestamp']))
 
         return frame
+    
+    def preserve_identity_with(self, new_array: np.ndarray) -> 'Frame':
+        """
+        Returns a new Frame object from the provided numpy array with the same guid and creation_timestamp
+        as the calling frame.
+        :param new_array: The modified numpy array.
+        :return: A new Frame object.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return Frame(new_array, GUID=self.guid, creation_timestamp=self.creation_timestamp)
+
 
 
 

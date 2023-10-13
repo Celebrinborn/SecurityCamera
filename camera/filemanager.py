@@ -73,10 +73,10 @@ class File_Pair:
             logger.exception(f'an IOError occured while attempting to write a record to {self.video_file_path}: {e}')
 
 class FileManager:
-    def __init__(self, root_folder:Path, max_dir_size:int):
+    def __init__(self, root_folder:Path, max_dir_size_bytes:int):
         
         self.folder_path = root_folder
-        self.max_dir_size = max_dir_size
+        self.max_dir_size = max_dir_size_bytes
 
         self.scan()
 
@@ -309,7 +309,7 @@ class VideoFileManagerOld:
                                   camera_name=camera_name)
         
         _max_dir_size = int(5e+9) # 5GB
-        file_manager = FileManager(root_folder=root_file_location, max_dir_size=_max_dir_size)
+        file_manager = FileManager(root_folder=root_file_location, max_dir_size_bytes=_max_dir_size)
         
         logger.debug('starting main filemanager loop')
         while not kill_the_daemon_event.is_set():
@@ -390,12 +390,13 @@ class VideoFileManager:
     _fileManager:FileManager
     _file_pair:File_Pair
 
-    def __init__(self, root_video_file_location: Path, resolution:Resolution, fps:int, file_manager:FileManager):
+    def __init__(self, root_video_file_location: Path, resolution:Resolution, fps:int, file_manager:FileManager, max_video_length_frame_seconds:int = 60*5):
         self._root_video_file_location = root_video_file_location
         self._resolution = resolution
         self._fps = fps
         self._videowriter, self._file_pair = self._open_video_writer(self.create_video_file_name(root_video_file_location, time.time()))
         self._fileManager = file_manager
+        self.max_video_length_frame_frames = int(max_video_length_frame_seconds / fps)
         self.Start()
     def __enter__(self):
         return self
@@ -416,7 +417,8 @@ class VideoFileManager:
     def _open_video_writer(self, video_filename_path:Path) -> tuple[cv2.VideoWriter, File_Pair]:
         # create video writer
         fourcc = cv2.VideoWriter_fourcc(*'FMP4')
-        videowriter = cv2.VideoWriter(str(video_filename_path), fourcc, self._fps, self._resolution)
+        logger.info(f'creating cv2.videowriter at {video_filename_path} with fourcc {fourcc} at fps {self._fps} at resolution {self._resolution}')
+        videowriter = cv2.VideoWriter(str(video_filename_path.absolute()), fourcc, self._fps, self._resolution)
         
         # reset frame counter
         self._frame_counter = 0
@@ -438,21 +440,24 @@ class VideoFileManager:
 
             return file_name_path
     def _video_file_manager_thread_function(self):
+        logger.debug('started _video_file_manager_thread_function')
         while not self._kill_video_file_manager_thread:
             # get the frame
             frame = self._queue.get()
             self._write(frame)
+            self._frame_counter += 1
+            # if self.max_video_length_frame_frames % self._fps*3 ==  self._frame_counter:
+            print(f'{self._frame_counter=}, {self.max_video_length_frame_frames=}')
+            if self._frame_counter > self.max_video_length_frame_frames:
+                self._close_video_writer(self._videowriter)
+                self._file_pair, self._videowriter = self._open_video_writer(self.create_video_file_name(self._root_video_file_location, time.time()))
+
            
     def _write(self, frame:Frame):
-         # increment the frame counter
-        self._frame_counter += 1
-
-
         if self._videowriter is None:
             raise RuntimeError('attempted to write to a cv2.videowriter that does not exist')
         # write the frame to file
         self._videowriter.write(frame)
-
         # write the frame to log
         self._file_pair.write_line(frame=frame, frame_counter_int=self._frame_counter)
 

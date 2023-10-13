@@ -8,7 +8,7 @@ import os
 @pytest.fixture
 def file_manager(tmp_path: Path):
     root_folder = tmp_path
-    return FileManager(root_folder, max_dir_size=2*24-1)  # space for just less than two file pairs
+    return FileManager(root_folder, max_dir_size_bytes=2*24-1)  # space for just less than two file pairs
 
 @pytest.fixture
 def file_pair_with_base_filename_path(tmp_path: Path):

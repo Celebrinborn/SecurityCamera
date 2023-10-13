@@ -5,14 +5,18 @@ import cv2
 from flask import Flask, Response, render_template, current_app
 import numpy as np
 from camera.camera import Camera
-from camera.filemanager import VideoFileManagerOld
+from camera.filemanager import VideoFileManager, Resolution, FileManager
 from camera.MotionDetector import MotionDetector
+from pathlib import Path
+import time
 
 import logging
 from log_config import configure_logging
 # Configure logging
 configure_logging()
 logger = logging.getLogger()
+
+
 
 app = Flask(__name__)
 
@@ -60,40 +64,26 @@ try:
     fps = 10
     camera_url = 0
 
-    _root_file_location = os.path.abspath(os.path.join('data', camera_name, 'video_cache'))
-    try:
-        if not os.path.exists(_root_file_location):
-            os.makedirs(_root_file_location)
-            logger.info(f"Created directory: {_root_file_location}")
-        else:
-            logger.info(f"Directory already exists: {_root_file_location}")
-    except OSError as e:
-        logger.exception(f"Error creating directory: {e}")
+    _root_file_location = Path('data', camera_name, 'video_cache')
+    _root_file_location.mkdir(parents=True, exist_ok=True)
+    _5gb = int(5e+9)
+    fileManager = FileManager(_root_file_location, _5gb)
 
     with Camera(camera_name=camera_name, camera_url = camera_url, max_fps=fps) as camera:
-        with VideoFileManagerOld(frame_width= 640, frame_height= 480, fps= fps,
-                        root_file_location=_root_file_location, 
-                        camera_name='webcam') as file_manager:
-            with MotionDetector(camera_name=camera_name, threshold=1000, mask=None, detector_post_cooldown_seconds=1.0) as motion_detector:
+        _resolution = Resolution(640, 480)
+        with VideoFileManager(root_video_file_location=_root_file_location, resolution=_resolution, fps= fps, file_manager=fileManager) as file_manager:
+            with MotionDetector(camera_name=camera_name) as motion_detector:
                 camera.Subscribe_queue(file_manager.GetQueue())
-
-                _queue = motion_detector.GetQueue()
-                logger.debug(f'type of queue is {_queue}')
-                camera.Subscribe_queue(_queue)
-                camera.Start()
-                file_manager.Start()
-                motion_detector.Start()
-
-
-
+                
+                
                 # Add camera and file_manager objects to the app context
-                app.camera = camera
-                app.file_manager = file_manager
+                app.camera = camera # type: ignore
+                app.file_manager = file_manager # type: ignore
 
                 
                 # Start the Flask app to keep the objects open
                 app.run()
-
+    logger.info('ending app')
 except Exception as e:
     # Log the exception and raise it to crash the app
     logging.exception('Failed to open Camera or FileManager')

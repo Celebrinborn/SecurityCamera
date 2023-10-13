@@ -92,15 +92,6 @@ class PostRequest:
 
 
 class MotionDetector:
-    alert_endpoint:str = os.environ['motion_detector_endpoint'] if 'motion_detector_endpoint' in os.environ \
-        else r'http://127.0.0.1:8888/detect_objects'
-    motion_threshold: int = int(os.environ['motion_threshold']) if 'motion_threshold' in os.environ and os.environ['motion_threshold'].isnumeric() \
-        else 50
-    camera_name: Union[str, int] = os.environ['camera_name'] if 'camera_name' in os.environ \
-        else 0
-    post_rate_limit:float = float(os.environ['object_detection_second_per_request_rate_limit']) if 'object_detection_second_per_request_rate_limit' in os.environ and os.environ['object_detection_second_per_request_rate_limit'].isnumeric() \
-        else 5.0
-
     _inbound_frame_queue: Queue[Frame] = Queue()
     _outbound_post_queue: Queue = LifoQueue()
     _kill_motion_detection_thread: threading.Event
@@ -110,11 +101,22 @@ class MotionDetector:
     _last_post_request_timestamp: float = 0.0
     _last_motion_detected_time: float = time.time()
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, camera_name:str, alert_endpoint:Union[str, int, None] = None, motion_threshold:Optional[int] = None, post_rate_limit:Optional[float] = None) -> None:
+        self.alert_endpoint:Union[int, str] = alert_endpoint if alert_endpoint \
+            else os.environ['motion_detector_endpoint'] if 'motion_detector_endpoint' in os.environ \
+            else r'http://127.0.0.1:8888/detect_objects'
+        self.motion_threshold = motion_threshold if motion_threshold \
+            else int(os.environ['motion_threshold']) if 'motion_threshold' in os.environ and os.environ['motion_threshold'].isnumeric() \
+            else 50
+        self.post_rate_limit = post_rate_limit if post_rate_limit \
+            else float(os.environ['object_detection_second_per_request_rate_limit']) if 'object_detection_second_per_request_rate_limit' in os.environ and os.environ['object_detection_second_per_request_rate_limit'].isnumeric() \
+            else 5.0
+        self.camera_name = camera_name if camera_name \
+            else os.environ['camera_name'] if 'camera_name' in os.environ \
+            else 0
+        self.Start()
     
     def __enter__(self):
-        self.Start()
         return self
     
     def __exit__(self, exc_type, exc_value, traceback):

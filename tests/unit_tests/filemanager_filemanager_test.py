@@ -1,5 +1,5 @@
 import pytest
-from camera.filemanager import FileManager, File_Pair
+from camera.filemanager import FileManager, VideoRecord
 from camera.resolution import Resolution
 from pathlib import Path
 from typing import Union
@@ -66,7 +66,7 @@ def test_scan(file_manager:FileManager, file_pair_with_base_filename_path, file_
     video_file, text_file = file_pair_with_base_filename_path
 
     # When
-    file_manager.add_file_pair(video_file)
+    file_manager.add_file(video_file)
 
     # Then
     assert video_file.stem in file_manager.list_pairs()
@@ -76,7 +76,7 @@ def test_delete_file(file_manager:FileManager, file_pair_with_base_filename_path
     video_file:Path
     text_file:Path
     video_file, text_file = file_pair_with_base_filename_path
-    file_manager.add_file_pair(video_file)
+    file_manager.add_file(video_file)
     # When
     assert video_file.exists(), 'video_file does not exist at start'
     assert text_file.exists(), 'text file does not exist at start'
@@ -99,7 +99,7 @@ def test_add_file(file_manager:FileManager, file_pair_with_base_filename_path):
     assert len(file_manager.list_pairs()) == 0, 'filemanager is not empty'
 
     # When
-    file_manager.add_file_pair(video_file)
+    file_manager.add_file(video_file)
     
     # Then
     assert len(file_manager.list_pairs()) == 1, 'filemanager did not add file pair'
@@ -110,7 +110,7 @@ def test_get_file_size(file_manager:FileManager, file_pair_with_base_filename_pa
     text_file:Path
     video_file, text_file = file_pair_with_base_filename_path
 
-    file_manager.add_file_pair(video_file)
+    file_manager.add_file(video_file)
 
     # When Then
     assert file_manager.get_pair_file_size(video_file.stem) == os.path.getsize(video_file) + os.path.getsize(text_file), 'file pair size did not match'
@@ -126,8 +126,8 @@ def test_get_total_dir_size(file_manager:FileManager, file_pair_with_base_filena
     text_file2:Path
     video_file2, text_file2 = file_pair2
 
-    file_manager.add_file_pair(video_file)
-    file_manager.add_file_pair(video_file2)
+    file_manager.add_file(video_file)
+    file_manager.add_file(video_file2)
 
     assert len(file_manager.list_pairs()) == 2
     # When Then

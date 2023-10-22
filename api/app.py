@@ -16,14 +16,43 @@ from log_config import configure_logging
 configure_logging()
 logger = logging.getLogger()
 
-
-
+logger.debug('creating flask app')
 app = Flask(__name__)
+try:
+    # Open the Camera and FileManager objects when the Flask app starts up
+    camera_name = 'webcam'
+    fps = 10
+    camera_url = 0
+
+    _root_file_location = Path('data', camera_name, 'video_cache')
+    _root_file_location.mkdir(parents=True, exist_ok=True)
+    max_folder_size = int(5e+8)# 500 mb #int(5e+9)
+    
+    logger.debug('creating filemanager')
+    file_Manager = FileManager(_root_file_location, max_folder_size)
+
+    logger.debug('creating camera')
+    camera = Camera(camera_name=camera_name, camera_url = camera_url, max_fps=fps)
+    _resolution = Resolution(640, 480)
+    video_file_manager = VideoFileManager(root_video_file_location=_root_file_location, resolution=_resolution, fps= fps, file_manager=file_Manager)
+    motion_detector = MotionDetector(camera_name=camera_name)
+    camera.Subscribe_queue(video_file_manager.GetQueue())
+
+    # Add camera and file_manager objects to the app context
+    app.camera = camera # type: ignore
+    app.file_manager = video_file_manager # type: ignore
+
+    logger.info('ending app')
+except Exception as e:
+    # Log the exception and raise it to crash the app
+    logging.exception('Failed to open Camera or FileManager')
+    raise e
 
 
 # Route for the index page
 @app.route('/')
 def index():
+    # return 'hello world'
     return render_template('index.html')
 
 # Route for the status API
@@ -58,33 +87,5 @@ def video_feed():
                 yield(b'--frame\r\n'
                     b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-try:
-    # Open the Camera and FileManager objects when the Flask app starts up
-    camera_name = 'webcam'
-    fps = 10
-    camera_url = 0
 
-    _root_file_location = Path('data', camera_name, 'video_cache')
-    _root_file_location.mkdir(parents=True, exist_ok=True)
-    _5gb = int(5e+9)
-    fileManager = FileManager(_root_file_location, _5gb)
-
-    with Camera(camera_name=camera_name, camera_url = camera_url, max_fps=fps) as camera:
-        _resolution = Resolution(640, 480)
-        with VideoFileManager(root_video_file_location=_root_file_location, resolution=_resolution, fps= fps, file_manager=fileManager) as file_manager:
-            with MotionDetector(camera_name=camera_name) as motion_detector:
-                camera.Subscribe_queue(file_manager.GetQueue())
-                
-                
-                # Add camera and file_manager objects to the app context
-                app.camera = camera # type: ignore
-                app.file_manager = file_manager # type: ignore
-
-                
-                # Start the Flask app to keep the objects open
-                app.run()
-    logger.info('ending app')
-except Exception as e:
-    # Log the exception and raise it to crash the app
-    logging.exception('Failed to open Camera or FileManager')
-    raise e
+app.run()

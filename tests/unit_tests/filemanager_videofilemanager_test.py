@@ -12,7 +12,7 @@ from camera.frame import Frame
 from camera.resolution import Resolution
 
 # Suppose your class file is named `file_manager.py`
-from camera.filemanager import VideoFileManager, File_Pair, FileManager
+from camera.filemanager import VideoFileManager, VideoRecord, FileManager
 
 @pytest.fixture
 def random_frame():
@@ -37,7 +37,7 @@ def test_open_video(video_file_manager:VideoFileManager):
     video_filename_path = video_file_manager.create_video_file_name(video_file_manager._root_video_file_location, time.time())
     videowriter, file_pair = video_file_manager._open_video_writer(video_filename_path)
     assert isinstance(videowriter, cv2.VideoWriter)
-    assert isinstance(file_pair, File_Pair)
+    assert isinstance(file_pair, VideoRecord)
 
 def test_close_video(video_file_manager:VideoFileManager):
     video_filename_path = video_file_manager.create_video_file_name(video_file_manager._root_video_file_location, time.time())

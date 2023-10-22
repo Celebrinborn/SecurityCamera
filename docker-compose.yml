@@ -14,11 +14,14 @@ services:
             - camera_name=testcamera
         ports:
           - "5000:5000"
-        networks:
-          - security_camera_network
-secrets:
-    example:
-        file: ./secrets/example
-
-networks:
-  security_camera_network:
+    db:
+        image: "mcr.microsoft.com/mssql/server:2019-latest"
+        environment:
+            ACCEPT_EULA: "Y"
+        env_file:
+            - ./secrets/db_password
+        secrets:
+            example:
+                file: .secrets\env
+            db_password:
+                file: ./secrets/db_password

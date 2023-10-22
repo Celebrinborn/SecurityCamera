@@ -9,6 +9,7 @@ import time
 import inspect
 
 from camera.frame import Frame
+from camera.resolution import Resolution
 import warnings
 
 import typing
@@ -43,7 +44,7 @@ class SubscriptionManager:
     def _add_frame_to_queues(self, frame: np.ndarray):
         assert isinstance(frame, np.ndarray), 'camera is attempting to put a non-ndarray on the queues'
         for queue in self._subscribed_queues:
-            queue.put(frame.copy())
+            queue.put(frame)
     
 
 class Camera:
@@ -112,6 +113,7 @@ class Camera:
             raise TypeError("currentFrame is not an ndarray")
 
         self._frame_height, self._frame_width, _ = self.currentFrame.shape
+        logger.debug(f'frame height and width are {self._frame_height, self._frame_width}')
 
         self._subscription_manager = SubscriptionManager()
 
@@ -205,9 +207,9 @@ class Camera:
             for frame in self.GetFrame():
                 if self._killDaemon:  # check flag to stop thread
                     break
-                start = time.perf_counter()
+                start = time.time()
                 subscriptionManager._add_frame_to_queues(frame)
-                end = time.perf_counter()
+                end = time.time()
                 elapsed_time = end - start
                 time_to_sleep = max(1.0 / fps - elapsed_time, 0)
                 time.sleep(time_to_sleep)
@@ -241,7 +243,8 @@ class Camera:
             int: The height of the frame.
         """
         return self._frame_height
-
+    def GetCameraResolution(self) -> Resolution:
+        return Resolution(self.GetFrameWidth(), self.GetFrameHeight())
 
 
 if __name__ == '__main__':

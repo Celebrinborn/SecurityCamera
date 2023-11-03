@@ -12,6 +12,10 @@ import logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
+
+from dotenv import load_dotenv
+load_dotenv('secrets/.env')
+
 _fps = 15
 logger.info('starting camera')
 camera = Camera('webcam', 0, _fps)

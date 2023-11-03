@@ -9,6 +9,8 @@ formatters:
     # This is the format string that defines how the log message will be formatted
     # The placeholders surrounded by percent signs are replaced with values from the log record
     format: "%(asctime)s | %(created)f | %(relativeCreated)d | %(levelname)s | %(process)d | %(processName)s | %(thread)d | %(threadName)s | %(pathname)s:%(lineno)d | %(stack_info)s | %(message)s"
+  json:
+    (): 'log_config.JSONFormatter'
 
 handlers:
   console:  # This is a handler called "console"
@@ -22,7 +24,7 @@ handlers:
     # This is the class name of the handler, which outputs log messages to a file
     class: logging.handlers.RotatingFileHandler
     level: DEBUG #ERROR  # This is the minimum logging level that this handler will handle
-    formatter: verbose  # This is the formatter to use for log messages handled by this handler
+    formatter: json  # This is the formatter to use for log messages handled by this handler
     filename: ./logs/app.log  # This is the path to the log file to write to
     maxBytes: 2000000000 # This is the maximum size of the log file in bytes (2 GB)
     backupCount: 5  # This is the number of backup log files to keep

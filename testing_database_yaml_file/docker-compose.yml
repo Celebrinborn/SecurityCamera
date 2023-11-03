@@ -1,10 +1,26 @@
 version: '3.8'
 services:
+  object_detection:
+    build: ../object_detection
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
   db:
     image: "mcr.microsoft.com/mssql/server:2019-latest"
     environment:
       ACCEPT_EULA: "Y"
-    env_file:
-      - secrets\.env
+      SA_PASSWORD: /run/secrets/SA_PASSWORD
     ports:
       - "1433:1433"
+    volumes:
+      - E:\security_camera\data\db\data:/var/opt/mssql/data
+      - E:\security_camera\data\db\filestream:/var/opt/mssql/filestream
+    secrets:
+      - SA_PASSWORD
+secrets:
+  SA_PASSWORD:
+    file: secrets/SA_PASSWORD
+
+
+# command to build and launch: docker-compose up --build

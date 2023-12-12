@@ -1,27 +1,68 @@
-version: '3'
+version: '3.8'
 
 services:
-    security_camera:
-        build: ./camera
-        volumes: 
-            - E:/security_camera/data:/opt/build/data
-            - E:/security_camera/logs:/opt/build/logs
-        secrets:
-            - example
-        environment:
-            - sleeptime=5
-            - camera_url=rtsp://admin:@192.168.50.30:554/h264Preview_01_main
-            - camera_name=testcamera
-        ports:
-          - "5000:5000"
+
+
+
+#   object_detection:
+#     build: ./object_detection
+#     ports:
+#       - "5000:5000"
+#     depends_on:
+#       - db
+#       - kafka
+#       - schema-registry
     db:
-        image: "mcr.microsoft.com/mssql/server:2019-latest"
-        environment:
-            ACCEPT_EULA: "Y"
-        env_file:
-            - ./secrets/db_password
-        secrets:
-            example:
-                file: .secrets\env
-            db_password:
-                file: ./secrets/db_password
+      image: mcr.microsoft.com/mssql/server:2019-latest
+      environment:
+        ACCEPT_EULA: 'Y'
+        SA_PASSWORD_FILE: /run/secrets/SA_PASSWORD
+      volumes:
+        - E:/security_camera/data:/var/opt/mssql/data
+        - E:/security_camera/logs:/var/opt/mssql/log
+      secrets:
+        - SA_PASSWORD
+    
+
+  # zookeeper:
+  #   image: 'bitnami/zookeeper:latest'
+  #   ports:
+  #     - '2181:2181'
+  #   environment:
+  #     - ALLOW_ANONYMOUS_LOGIN=yes
+  #   volumes:
+  #     - E:\security_camera\data\zookeeper_data:/bitnami/zookeeper
+
+  # kafka:
+  #   image: 'bitnami/kafka:latest'
+  #   ports:
+  #     - '9092:9092'
+  #   environment:
+  #     - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+  #     - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+  #     - ALLOW_PLAINTEXT_LISTENER=yes
+  #   depends_on:
+  #     - zookeeper
+  #   volumes:
+  #     - E:\security_camera\data\kafka_data:/bitnami/kafka
+
+  # schema-registry:
+  #   image: confluentinc/cp-schema-registry:latest
+  #   ports:
+  #     - "8081:8081"
+  #   environment:
+  #     SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'kafka:9092'
+  #     SCHEMA_REGISTRY_HOST_NAME: schema-registry
+  #     SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+  #   depends_on:
+  #     - kafka
+  #   volumes:
+  #     - E:\security_camera\data\schema_registry_data:/var/lib/schema-registry
+
+secrets:
+  SA_PASSWORD:
+    file: ./secrets/SA_PASSWORD
+  example:
+    file: ./secrets/.env
+  # db_password:
+  #   file: ./secrets/SA_PASSWORD

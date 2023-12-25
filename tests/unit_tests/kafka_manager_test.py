@@ -7,13 +7,13 @@ import json
 import numpy as np
 
 # Fixture to create a numpy array consumed by the Frame object
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='function')
 def GetImage():
     image = np.random.randint(0, 256, (480, 640, 3), dtype = np.uint8)
     yield image
 
 # Fixture to create a Frame object
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='function')
 def GetFrame(GetImage):
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=UserWarning)
@@ -21,6 +21,7 @@ def GetFrame(GetImage):
 
         frame = Frame(image)
         yield frame
+
 
 # Test for sending a simple message
 @patch('camera.kafka_manager.KafkaProducer')  # Corrected path

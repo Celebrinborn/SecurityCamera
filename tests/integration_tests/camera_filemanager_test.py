@@ -68,7 +68,7 @@ class MockVideoCapture:
 @pytest.fixture
 def video_file_manager(tmp_path):
     resolution = Resolution(width=640, height=480)
-    file_manager = FileManager(root_folder=tmp_path, max_dir_size=1000)
+    file_manager = FileManager(root_folder=tmp_path, max_dir_size_bytes=1000)
     video_file_manager = VideoFileManager(root_video_file_location=tmp_path, resolution=resolution, fps=30, file_manager=file_manager)
     return video_file_manager
 

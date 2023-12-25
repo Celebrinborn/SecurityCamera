@@ -10,6 +10,7 @@ from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, smart_inference_mode
 
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class ObjectDetector:
         im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
         return im, ratio, (dw, dh)
 
-    def __init__(self, weights_path='yolov5s.pt', data_path='data/coco128.yaml', imgsz=(640,640), device=None):
+    def __init__(self, weights_path=Path('data', 'yolov5s.pt'), data_path='data/coco128.yaml', imgsz=(640,640), device=None):
         self.device = device if device else torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         logger.info(f'yolo running with device {str(device)}')

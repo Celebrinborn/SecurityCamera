@@ -1,14 +1,16 @@
 import logging
+import uuid
 logger = logging.getLogger(__name__)
 import cv2
 import numpy as np
+import pandas as pd
 import os
 import pathlib
 from os import fspath
 import datetime
 from queue import Queue, LifoQueue
 import typing
-from typing import List, Optional
+from typing import List, Optional, Union, Tuple, Dict, Any
 import threading
 import sys
 import inspect
@@ -22,6 +24,8 @@ import datetime
 from pathlib import Path
 import time
 
+import atexit
+
 logger = logging.getLogger(__name__)
 
 import os
@@ -31,351 +35,174 @@ from typing import Union, Iterable, cast, TextIO, Optional
 import json
 from camera.resolution import Resolution
 
+from camera.sqlmanager import SQLManager
+
 @dataclass
-class File_Pair:
-    base_filename: str
-    directory_path: Path
-    video_file_path: Path
-    text_file_path: Path
-
-    def __init__(self, video_file_path:Path):
-        if video_file_path.suffix not in ['.mp4', '.avi', '.mp4v', '']:
-            raise ValueError(f'{video_file_path} should be mp4, avi, or txt')
-        self.base_filename = video_file_path.stem
-        self.directory_path = video_file_path.parent
-        self.video_file_path = video_file_path
-        self.text_file_path = video_file_path.with_suffix('.txt')
-        
-        
-        # create file if it does not exist
-        self.text_file_path.touch()
-
-
-        if not all((self.video_file_path.exists(), self.text_file_path.exists())):
-            raise FileNotFoundError
-    def delete(self):
-        self.text_file_path.unlink()
-        self.video_file_path.unlink()
-
-    def creation_date(self):
-        return os.path.getctime(self.video_file_path)
-    def write_line(self, frame:Frame, frame_counter_int:int) -> None:
-        # Build the JSON data
-        data = {frame_counter_int: {"creation_timestamp": frame.creation_timestamp,"guid": str(frame.guid)}}
-
-        # Append the data to the text file
-        try:
-            with self.text_file_path.open('a') as text_file_handle:   # Open the file in append mode
-                json.dump(data, text_file_handle)
-        except TypeError as e:
-            logger.exception(f'an error has occured while attempting to encode json {e}')
-        except IOError as e:
-            logger.exception(f'an IOError occured while attempting to write a record to {self.video_file_path}: {e}')
-
-class FileManager:
-    def __init__(self, root_folder:Path, max_dir_size:int):
-        
-        self.folder_path = root_folder
-        self.max_dir_size = max_dir_size
-
-        self.scan()
-
-    def scan(self):
-        self._files = {}
-        # Get a Path object for each file in the directory
-        files = [file for file in self.folder_path.iterdir() if file.is_file()]
-        for file in files:
-            try:
-                pair = File_Pair(file)
-                self._files[pair.base_filename] = pair
-            except (ValueError, FileNotFoundError) as e:
-                logger.debug(f'when loading file pairs for scan got exception: {e=} on {file}')
-                continue
-
-
+class VideoRecord:
+    _cache:pd.DataFrame
+    batch_size:int
+    sql_manager:SQLManager
+    mssql_table:str = '[cameras].[frames]'
+    row_curser:int = 0
     
 
-    def add_file_pair(self, video_filename:Path):
-        # base_filename could be a Path to the text file or the video file
-        # it could also be a string with or without an extension...
+    def __init__(self, video_file_path: Path, batch_size:int = 10*60*5):
+        # set parameters
 
-        try:
-            pair = File_Pair(video_filename)
-            self._files[pair.base_filename] = pair
-        except (ValueError, FileNotFoundError) as e:
-            logger.debug(f'attempted to add filepair {video_filename=}, got exception {e}')
-    def list_pairs(self):
-        if hasattr(self, '_files'):
-            return self._files
-        else:
-            return {}
-    def get_pair_file_size(self, base_filename:Union[str, File_Pair]):
-        if isinstance(base_filename, File_Pair):
-            base_filename = base_filename.base_filename
-        pair:File_Pair = self._files.get(base_filename, None)
-        if pair is None:
-            return None
-        txt_size = os.path.getsize(pair.text_file_path)
-        vid_size = os.path.getsize(pair.video_file_path)
-        return txt_size + vid_size
-    def get_total_dir_size(self):
-        size = 0
-        for pair in self._files.values():
-            _s = self.get_pair_file_size(pair)
-            size += _s if _s is not None else 0
-        return size
-    def delete_pair(self, base_filename:Union[str, Path, File_Pair]):
-        if isinstance(base_filename, File_Pair):
-            base_filename = base_filename.base_filename
-        if isinstance(base_filename, Path):
-            base_filename = base_filename.stem
-        pair:File_Pair = self._files.get(base_filename, None)
-        if pair == None:
-            raise KeyError('pair not in FileManager')
+        # verify the file exists and is a video file
+        if not video_file_path.is_file():
+            raise ValueError(f'{video_file_path.resolve()} is not a file')
+        if video_file_path.suffix not in ['.mp4', '.avi', '.mp4v']:
+            raise ValueError(f'{video_file_path} should be mp4, avi, or mp4v')
+        self.video_file_path = video_file_path  # assuming this is a Path to the video file
+
+        self.batch_size = batch_size
+
+        # initialize the sql manager
+        self.sql_manager = SQLManager()
         
+        # initialize the cache
+        self._cache = self.create_cache()
+        
+        # add the video to the database if it does not exist
+        if not self.sql_manager.DoesVideoExists(self.video_file_path):
+            self.sql_manager.AddVideo(self.video_file_path)
+
+    def write_line(self, frame: Frame, frame_counter_int: int) -> None:
+        # send the data to the database
+        # self.sql_manager.AddFrameDetails(frame_counter_int, frame.guid, self.video_file_path)
+
+        # if batch is full, write to database
+        if self.row_curser == self.batch_size:
+            self.flush_cache()
+
+        # write the data to the cache
+        self._cache.iloc[self.row_curser] = pd.Series([str(frame.guid), str(self.video_file_path.absolute())])
+        self.row_curser += 1
+
+    def delete(self) -> bool:
+        # Delete the file from the filesystem
         try:
-            pair.delete()
-            self._files.pop(pair.base_filename)
+            self.sql_manager.DeleteVideo(self.video_file_path)
+            self.video_file_path.unlink(missing_ok=True)
+            return True
+        except FileNotFoundError as e:
+            logger.exception(f'Unable to delete {self.video_file_path}. {e}')
         except Exception as e:
-            logger.exception(f'an unhandled exception occured while attempting to pop {base_filename=}. {self._files=}, {e}')
+            logger.exception(f'An unhandled exception occurred while attempting to delete {self.video_file_path}. {e}')
             raise e
-
-    def _get_oldest_file(self):
-        return min([p.creation_date() for p in cast(Iterable[File_Pair], self._files)])
-    def _get_newest_file(self):
-        return max([p.creation_date() for p in cast(Iterable[File_Pair], self._files)])
-
-class VideoFileManagerOld:
-    _videowriter: cv2.VideoWriter
-    _frame_count: int
-    root_file_location:str
-    frame_width:int
-    frame_height:int
-    fps:int
-    queue:Queue
-    _filemanager_thread:threading.Thread
-
-    def __init__(self, frame_width: int, frame_height: int, fps: int, camera_name:str, root_file_location:Union[str, None] = None) -> None:
-        if not isinstance(frame_width, int):
-            raise TypeError(f"frame_width should be an integer, instead got {type(frame_width)}")
-        if not isinstance(frame_height, int):
-            raise TypeError(f"frame_height should be an integer, instead got {type(frame_height)}")
-        if not isinstance(fps, int):
-            raise TypeError(f"fps should be an integer, instead got {type(fps)}")
-        if not isinstance(root_file_location, str) and root_file_location is not None:
-            raise TypeError(f"root_file_location should be a string, instead got {type(root_file_location)}")
-        if root_file_location is not None and not os.path.exists(root_file_location):
-            drive, path = os.path.splitdrive(root_file_location)
-            if not path.startswith(os.path.sep):
-                raise ValueError(f"root_file_location '{root_file_location}' is invalid - missing path separator after drive letter")
-            else: 
-                raise ValueError(f"root_file_location '{root_file_location}' does not exist")
-
-        if root_file_location == None:
-            root_file_location = os.path.abspath(os.path.join('data', camera_name, 'video_cache'))
-            logger.info(f'no root_file_location path provided, defaulting to {root_file_location}')
-            if not os.path.exists(root_file_location):
-                try:
-                    os.makedirs(root_file_location)
-                except OSError as e:
-                    logger.exception(f'UNABLE TO CREATE root_file_location {root_file_location}, e')
-
-
-        self.frame_width = frame_width
-        self.frame_height = frame_height
-        self.fps = fps
-        self._frame_count = 0
-        self.camera_name = camera_name
-        if not os.path.exists(root_file_location):
-            logger.info(f'creating file location at: {root_file_location}')
-            os.makedirs(root_file_location)
-        self.root_file_location = root_file_location
-        self.queue = Queue()
-        self._kill_the_daemon_event = threading.Event()
-        self._videowriter = None
-
-
-    def __enter__(self):
-        logger.debug('running filemanager class enter')
-        return self
+        return False
     
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.Stop()
-        logger.debug('running filemanager class exit')
+    def __eq__(self, other):
+        if not isinstance(other, VideoRecord):
+            return False
+        return self.video_file_path == other.video_file_path
 
-    def _get_file_sizes(self, directory):
-        file_sizes = {}
-        for filename in os.listdir(directory):
-            path = os.path.join(directory, filename)
-            if os.path.isfile(path):
-                file_sizes[filename] = os.path.getsize(path)
-        return file_sizes
-    def time_to_folder_name(self, timestamp:datetime.datetime):
-        # note: use utcnow() NOT now()
-        return timestamp.strftime(r'%Y%m%d_%H')
+    def __str__(self):
+        return f'{self.video_file_path.name}'
+    def file_size(self):
+        return self.video_file_path.stat().st_size if self.video_file_path.is_file() else 0
 
-    def _start_filemanager_thread(self, kill_the_daemon_event:threading.Event, queue:Queue, fps:int, root_file_location:str, video_length_seconds:int, frame_width:int, frame_height:int, camera_name:str, _filemanager):
-        assert isinstance(frame_width, int), 'frame_width is not int'
-        assert isinstance(frame_height, int), 'frame_height is not int'
+    def create_cache(self):
+        # Define the DataFrame with the correct data types and preallocate space
+        index = pd.RangeIndex(start=0, stop=self.batch_size, step=1)
+        data = {
+            'frame_guid': pd.Series([None] * self.batch_size, dtype='object'),
+            'video_file_name': pd.Series([str(self.video_file_path.absolute())] * self.batch_size, dtype='str')
+        }
+        df = pd.DataFrame(data, index=index)
+        # logger.debug(f'created cache with shape {df.shape} and size {df.memory_usage().sum()} and types {df.dtypes}')
 
-        def write(videoWriter:cv2.VideoWriter, frame:Frame, file_pair:File_Pair, frame_counter:int):
-            # logger.debug('writing frame')
-            if not isinstance(frame, Frame):
-                raise TypeError('frame must be a Frame type')
-            videoWriter.write(frame)
-            file_pair.write_line(frame, frame_counter)
-        
-        def time_to_file_name(timestamp: Optional[datetime.datetime] = None):
-            """
-            Returns a timestamp string in the format of '%Y%m%d_%H%M%Z'.
+        return df
+    def flush_cache(self):
+        # Write the cached data to the database
+        batch_data = self._cache.iloc[:self.row_curser]
 
-            Parameters:
-                timestamp (datetime.datetime, optional): The timestamp to convert to a filename string. Defaults to None.
+        logger.debug(f'writing {batch_data.shape} to database')
 
-            Returns:
-                str: The timestamp string in the format of '%Y%m%d_%H%M%Z'.
-            """
-            if timestamp is None:
-                timestamp = datetime.datetime.utcnow()
-
-            # Convert UTC to local time
-            timestamp = timestamp.astimezone()
-
-            if 'file_extension' in os.environ:
-                _file_extension = os.environ['file_extension']
-            else:
-                if sys.platform == 'win32':
-                    _file_extension = 'mp4v'
-                else: # sys.platform == 'linux':
-                    _file_extension = 'avi'
-            _file_name = f"{timestamp.strftime('%Y%m%d_%H%M%S_%Z').lower()}.{_file_extension}"
-            logger.debug(f'generated filename {_file_name}')
-            return _file_name
-
-
-        def start_video(base_filepath:str, filename:str, fps:int, frame_width:int, frame_height:int, filemanager:VideoFileManagerOld, camera_name:str) -> cv2.VideoWriter:
-            if not isinstance(base_filepath, str):
-                raise TypeError(f"Expected 'filepath' argument to be of type 'str', but got {type(base_filepath)} instead.")
-            if not isinstance(filename, str):
-                raise TypeError(f"Expected 'filename' argument to be of type 'str', but got {type(filename)} instead.")
-            if not isinstance(fps, int):
-                raise TypeError(f"Expected 'fps' argument to be of type 'int', but got {type(fps)} instead.")
-            if not isinstance(frame_width, int):
-                raise TypeError(f"Expected 'frame_width' argument to be of type 'int', but got {type(frame_width)} instead.")
-            if not isinstance(frame_height, int):
-                raise TypeError(f"Expected 'frame_height' argument to be of type 'int', but got {type(frame_height)} instead.")
-            if not isinstance(filemanager, VideoFileManagerOld):
-                raise TypeError(f"Expected 'filemanager' argument to be of type 'FileManager', but got {type(filemanager)} instead.")
-            
-            fourcc = cv2.VideoWriter_fourcc(*'FMP4')
-            if not os.path.exists(base_filepath):
-                raise Exception("Base filepath does not exist: {}".format(base_filepath))
-
-            # Check if the folder path exists, if not create it
-            if not os.path.exists(base_filepath):
-                logger.warning(f'base_filepath {base_filepath} does not exist. creating it. this should not happen', exc_info=True, stack_info=True)
-                os.makedirs(base_filepath)
-
-            # Join the filepath
-            _filename_path = os.path.join(base_filepath, filename)
-
-            _resolution = (frame_width, frame_height)
-            logger.debug(f'creating videowriter with filepath {_filename_path}; fourcc{fourcc}; fps: {fps}; resolution {_resolution}')
-            _videowriter = cv2.VideoWriter(_filename_path, fourcc, fps, _resolution)
-            filemanager._videowriter = _videowriter
-            logger.debug(f'successfully created videowriter with filepath {_filename_path}; fourcc{fourcc}; fps: {fps}; resolution {_resolution}')
-
-            # create file pair
-            file_pair = File_Pair(Path(_filename_path))
-            return _videowriter, _filename_path, file_pair
-
-
-        def end_video(videowriter:cv2.VideoWriter):
-            # Assert that the object is an instance of cv2.VideoWriter
-            assert isinstance(videowriter, cv2.VideoWriter), "videowriter is not a cv2.VideoWriter object"
-            logger.debug('releasing video writer')
-            videowriter.release()
-            logger.debug('successfully released video writer')
-
-        logger.debug('filemanager daemon has started')
-
-        _frame_counter = 0
-        videowriter, filename, file_pair = start_video(base_filepath = root_file_location,
-                                  filename=time_to_file_name(),
-                                  fps=fps,
-                                  frame_width=frame_width,
-                                  frame_height=frame_height,
-                                  filemanager=_filemanager,
-                                  camera_name=camera_name)
-        
-        _max_dir_size = int(5e+9) # 5GB
-        file_manager = FileManager(root_folder=root_file_location, max_dir_size=_max_dir_size)
-        
-        logger.debug('starting main filemanager loop')
-        while not kill_the_daemon_event.is_set():
-            if _frame_counter > video_length_seconds * fps:
-                _frame_counter = 0
-                file_manager.add_file_pair(file_pair)
-                end_video(videowriter)
-                videowriter, filename, file_pair = start_video(base_filepath = root_file_location,
-                                          filename=time_to_file_name(),
-                                          fps=fps,
-                                          frame_width=frame_width,
-                                          frame_height=frame_height,
-                                          filemanager=_filemanager,
-                                          camera_name=camera_name)
-            frame = queue.get()
-            _frame_counter += 1
-            # if _frame_counter % 100 == 0:
-            #     logger.debug(f'writing frame {_frame_counter} of {video_length_seconds * fps} ({video_length_seconds} seconds at {fps})')
-            write(videowriter, frame, file_pair, _frame_counter)
-        logger.info('kill the demon event is True', stack_info=True)
-        end_video(videowriter)
+        self.sql_manager.add_frame_batch(batch_data, self.video_file_path)
+        self.row_curser = 0
 
     
-    def Start(self):
-        _caller = inspect.stack()[1]
-        logger.info(f'Starting Camera.Start() from {_caller.filename}:{_caller.lineno}')
+class FileManager:
+    _video_records: List[VideoRecord] = []
+    def __init__(self, root_folder: Path, max_dir_size_bytes: int):
+        self.sql_manager = SQLManager()
+        self.folder_path = root_folder
+        self.max_dir_size = max_dir_size_bytes
+        self.scan()
+    
+    def scan(self):
+        # Update the _files dictionary with VideoRecord objects
+        logger.debug(f'scanning {self.folder_path.absolute()} for video files')
+        for file in [f for f in self.folder_path.iterdir() if f.suffix in ['.mp4', '.avi', '.mp4v'] and f.is_file()]:
+            video_record = VideoRecord(file)
+            self._video_records.append(video_record)
 
-        logging.debug(f"type of frame_width: {type(self.frame_width)}")
-        logging.debug(f"type of frame_height: {type(self.frame_height)}")
+    def add_file(self, video_record: VideoRecord):
+        self._video_records.append(video_record)
 
+        # Log current size of directory as percentage
+        logger.debug(f'Current size of directory is {(self.get_total_dir_size() / self.max_dir_size * 100):.2f}%. {self.get_total_dir_size():,} of {self.max_dir_size:,}')
 
-        logger.info(f'starting filemanager thread with fps {self.fps}')
-        self._filemanager_thread = threading.Thread(target=VideoFileManagerOld._start_filemanager_thread, name="Filemanager_Thread", daemon=True,
-            kwargs={
-                'kill_the_daemon_event': self._kill_the_daemon_event,
-                'queue': self.GetQueue(),
-                'fps': self.fps,
-                'root_file_location': self.root_file_location,
-                'video_length_seconds': 15 * 60,
-                'frame_width': self.frame_width,
-                'frame_height': self.frame_height,
-                'camera_name': self.camera_name,
-                '_filemanager': self
-            })
-        logger.debug('starting filemanager daemon')
-        self._filemanager_thread.start()
-    def Stop(self):
-        logger.debug('killing daemon')
-        # set the switch make the daemon thread self abort
-        self._kill_the_daemon_event.set()
+        # Check if the directory size exceeds the maximum allowed
+        while self.get_total_dir_size() > self.max_dir_size:
+            oldest_record = self._get_oldest_record()
+            if oldest_record:
+                logger.debug(f'Deleting file due to exceeding dir max size {oldest_record.video_file_path=}')
+                self.delete_record(oldest_record)
 
-        # block until the thread dies
-        if self._filemanager_thread is not None:
-            self._filemanager_thread.join()
+    def get_record_file_size(self, video_record: VideoRecord) -> int:
+        
+        if len(self._video_records) == 0:
+            raise ValueError('No files in FileManager')
+
+        # Check if the file exists
+        if video_record.video_file_path.is_file():
+            try:
+                return video_record.video_file_path.stat().st_size
+            except Exception as e:
+                logger.exception(f'Unable to get size of {video_record.video_file_path}. exception occurred {e}')
+        logger.error(f'Unable to get size of {video_record.video_file_path}, file does not exist')
+        return 0
+
+    def get_total_dir_size(self) -> int:
+        total_size = 0
+        for video_record in self._video_records:
+            assert isinstance(video_record, VideoRecord), f'{video_record=} is not a VideoRecord object'
+            total_size += video_record.file_size()
+        return total_size
+
+    def delete_record(self, video_record:VideoRecord) -> bool:
+        assert isinstance(video_record, VideoRecord), f'{video_record=} is not a VideoRecord object'
+        if video_record in self._video_records:
+            self._video_records.remove(video_record)
         else:
-            logger.warning('filemanager Stop was called however thread is already dead', stack_info=True)
+            logger.warning(f'{video_record=} not in {self._video_records=}')
 
-    def GetQueue(self) -> Queue:
-        """
-        Returns the queue associated with this instance of the file manager.
 
-        Returns:
-            Queue: The associated queue.
-        """
-        return self.queue
-    
+        isDeleteSucess = video_record.delete()
+
+        return isDeleteSucess
+        
+        
+
+    def _get_oldest_record(self) -> Optional[VideoRecord]:
+        if self._video_records:
+            return min([vr for vr in self._video_records if vr.video_file_path.is_file()], \
+                       key=lambda vr: vr.video_file_path.stat().st_ctime \
+                       if vr.video_file_path.is_file() else 0)
+        return None
+
+    def _get_newest_record(self) -> Optional[VideoRecord]:
+        if self._video_records:
+            return max([vr for vr in self._video_records if vr.video_file_path.is_file()], \
+                       key=lambda vr: vr.video_file_path.stat().st_ctime \
+                       if vr.video_file_path.is_file() else 0)
+        return None
+
+
+
 
 
 class VideoFileManager:
@@ -388,15 +215,24 @@ class VideoFileManager:
     _video_file_manager_thread: threading.Thread
     _kill_video_file_manager_thread: threading.Event
     _fileManager:FileManager
-    _file_pair:File_Pair
+    _video_record:VideoRecord
 
-    def __init__(self, root_video_file_location: Path, resolution:Resolution, fps:int, file_manager:FileManager):
+    def __init__(self, root_video_file_location: Path, resolution:Resolution, \
+                 fps:int, file_manager:Optional[FileManager] = None, max_video_length_frame_seconds:int = 60*5, \
+                    *, init_without_start = False):
         self._root_video_file_location = root_video_file_location
         self._resolution = resolution
         self._fps = fps
-        self._videowriter, self._file_pair = self._open_video_writer(self.create_video_file_name(root_video_file_location, time.time()))
-        self._fileManager = file_manager
-        self.Start()
+        self.max_video_length_frame_frames = int(max_video_length_frame_seconds * fps)
+        self._fileManager = file_manager if file_manager is not None else FileManager(root_video_file_location, 10**6)
+        # assert isinstance(self._fileManager, FileManager), f'{self._fileManager=} is not a FileManager object'
+        self._videowriter = self._open_video_writer(self.create_video_file_name(root_video_file_location, time.time()))
+        
+        # register the close function to be called when the program exits to avoid corrupt video files
+        atexit.register(self._close_video_writer, self._videowriter)
+        
+        if not init_without_start:
+            self.Start()
     def __enter__(self):
         return self
     def __exit__(self, exc_type, exc_value, traceback):
@@ -413,24 +249,33 @@ class VideoFileManager:
             self._video_file_manager_thread.join(timeout=3 if timeout <= 0 else timeout)
     def GetQueue(self) -> Queue:
         return self._queue
-    def _open_video_writer(self, video_filename_path:Path) -> tuple[cv2.VideoWriter, File_Pair]:
+    def _open_video_writer(self, video_filename_path:Path) -> cv2.VideoWriter:
+        video_filename_str = str(video_filename_path)
         # create video writer
-        fourcc = cv2.VideoWriter_fourcc(*'FMP4')
-        videowriter = cv2.VideoWriter(str(video_filename_path), fourcc, self._fps, self._resolution)
-        
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v') if sys.platform == 'win32' else cv2.VideoWriter_fourcc(*'FMP4')
+        logger.info(f'creating cv2.videowriter at {video_filename_str} with fourcc {fourcc} at fps {self._fps} at resolution {self._resolution} with max frame length of {self.max_video_length_frame_frames} or {self._resolution} with max frame length of {self.max_video_length_frame_frames / self._fps=} seconds or {self.max_video_length_frame_frames / self._fps / 60=} minutes')
+
+        videowriter = cv2.VideoWriter(video_filename_str, fourcc, self._fps, self._resolution) # type: ignore
+
+        # using an assert verify the file exists
+        # assert video_filename_path.is_file(), f'{video_filename_path} is not a file'
+
         # reset frame counter
         self._frame_counter = 0
 
-        file_pair = File_Pair(video_filename_path)
-        return videowriter, file_pair
+        self._video_record = VideoRecord(video_filename_path)
+        self._fileManager.add_file(self._video_record)
+        return videowriter
     def _close_video_writer(self, videowriter:cv2.VideoWriter):
+        self._video_record.flush_cache()
         videowriter.release()
+        logger.debug(f'closing cv2.videowriter')
     def create_video_file_name(self, root_video_file_location: Path, unix_timestamp:float) -> Path:
         # filename will be humanReadableTime_unixTimestamp.extension
             if 'file_extension' in os.environ:
                 _file_extension = os.environ['file_extension']
             else:
-                _file_extension = '.mp4v' if sys.platform == 'win32' else '.avi'
+                _file_extension = '.mp4' if sys.platform == 'win32' else '.avi'
             
             _file_name = f"{time.strftime('%Y%m%d_%H%M%S_%Z', time.localtime())}.{_file_extension}"
 
@@ -438,25 +283,39 @@ class VideoFileManager:
 
             return file_name_path
     def _video_file_manager_thread_function(self):
-        while not self._kill_video_file_manager_thread:
+        logger.debug('started _video_file_manager_thread_function')
+        while not self._kill_video_file_manager_thread.is_set():
             # get the frame
+            # logger.debug('fetching file from queue')
             frame = self._queue.get()
             self._write(frame)
+            self._frame_counter += 1
+            # if self.max_video_length_frame_frames % self._fps*3 ==  self._frame_counter:
+            # logger.debug(f'{self._frame_counter=}, {self.max_video_length_frame_frames=}')
+            if self._frame_counter > self.max_video_length_frame_frames:
+                logger.debug(f'creating new video file as frame counter is at {self._frame_counter}')
+                self._close_video_writer(self._videowriter) # type: ignore
+                self._videowriter = self._open_video_writer(self.create_video_file_name(self._root_video_file_location, time.time()))
+
            
     def _write(self, frame:Frame):
-         # increment the frame counter
-        self._frame_counter += 1
-
-
         if self._videowriter is None:
             raise RuntimeError('attempted to write to a cv2.videowriter that does not exist')
+        # logger.debug('writing frame')
+        
         # write the frame to file
-        self._videowriter.write(frame)
+        self._videowriter.write(self.scale(frame, self._resolution))
+        # self._videowriter.write(frame)
 
         # write the frame to log
-        self._file_pair.write_line(frame=frame, frame_counter_int=self._frame_counter)
+        self._video_record.write_line(frame=frame, frame_counter_int=self._frame_counter)
+    
+    @staticmethod
+    def scale(frame: Frame, target_resolution: Resolution) -> Frame:
+        scaled_frame = frame.preserve_identity_with(cv2.resize(frame, target_resolution, interpolation=cv2.INTER_AREA))
+        # logger.debug(f'scaling frame {frame.shape} to {target_resolution}, identity preserved: {scaled_frame == frame}')
+        return scaled_frame
+    
 
         
-            
-
         

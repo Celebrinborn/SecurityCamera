@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  object_detection:
+    build: ../object_detection
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+      - kafka
+      - schema-registry
+
+  db:
+    image: "mcr.microsoft.com/mssql/server:2019-latest"
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: /run/secrets/SA_PASSWORD
+    ports:
+      - "1433:1433"
+    volumes:
+      - E:\security_camera\data\db_data:/var/opt/mssql/data
+      - E:\security_camera\data\db_filestream:/var/opt/mssql/filestream
+    secrets:
+      - SA_PASSWORD
+
+  zookeeper:
+    image: 'bitnami/zookeeper:latest'
+    ports:
+      - '2181:2181'
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    volumes:
+      - E:\security_camera\data\zookeeper_data:/bitnami/zookeeper
+
+  kafka:
+    image: 'bitnami/kafka:latest'
+    ports:
+      - '9092:9092'
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+    volumes:
+      - E:\security_camera\data\kafka_data:/bitnami/kafka
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest'
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'kafka:9092'
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    depends_on:
+      - kafka
+    volumes:
+      - E:\security_camera\data\schema_registry_data:/var/lib/schema-registry
+
+secrets:
+  SA_PASSWORD:
+    file: ./secrets/SA_PASSWORD

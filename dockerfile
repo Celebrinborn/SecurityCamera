@@ -55,6 +55,24 @@ RUN apt-get -qq update \
     && apt-get -qq clean
 
     RUN pip install torch torchvision torchaudio flask PyYAML
+# install sql
+# Install tools required for the ODBC driver installation and pyodbc compilation
+RUN apt-get update \
+    && apt-get install -y gnupg2 curl apt-transport-https unixodbc-dev gcc g++ build-essential \
+    && apt-get clean
+
+# Add the Microsoft repository for the ODBC Driver
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/debian/10/prod.list > /etc/apt/sources.list.d/mssql-release.list
+
+# Install the ODBC Driver
+RUN apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
+    && apt-get clean
+
+
+
+
 #WORKDIR /app
 ADD ./camera/main.py ./camera/main.py
 ADD ./camera/alerts.py ./camera/alerts.py

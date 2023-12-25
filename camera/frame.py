@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import warnings
 import uuid
@@ -5,7 +6,21 @@ import time
 import io
 import json
 import base64
-from typing import Optional, Union
+from typing import Optional, Union, Any
+
+import avro.schema
+from avro.io import DatumWriter
+from avro.io import DatumReader
+from avro.datafile import DataFileReader, DataFileWriter
+from io import BytesIO
+
+import os
+
+import cv2
+
+import logging
+logger = logging.getLogger(__name__)
+
 
 class Frame(np.ndarray):
     guid: uuid.UUID
@@ -63,7 +78,7 @@ class Frame(np.ndarray):
 
         return hash(self.guid)
     
-    def Save_To_JSON(self):
+    def Export_To_JSON(self):
         # Create a buffer
         buffer = io.BytesIO()
 
@@ -103,6 +118,129 @@ class Frame(np.ndarray):
             frame = Frame(arr, GUID=uuid.UUID(json_obj['GUID']), creation_timestamp=float(json_obj['creation_timestamp']))
 
         return frame
+    
+    def preserve_identity_with(self, new_array: np.ndarray) -> 'Frame':
+        """
+        Returns a new Frame object from the provided numpy array with the same guid and creation_timestamp
+        as the calling frame.
+        :param new_array: The modified numpy array.
+        :return: A new Frame object.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return Frame(new_array, GUID=self.guid, creation_timestamp=self.creation_timestamp)
 
+    def Export_To_JPG(self) -> bytes:
+        """
+        Convert a Frame object to a JPEG byte string.
 
+        :param frame: Frame object to convert.
+        :return: JPEG byte string.
+        """
+        # Encode the frame as JPEG
+        success, encoded_image = cv2.imencode('.jpg', self)
+        if not success:
+            raise ValueError("Could not encode image to JPEG")
+        return encoded_image.tobytes()
 
+    @staticmethod
+    def _load_From_JPG(jpg_bytes: bytes) -> np.ndarray:
+        """
+        Convert a JPEG byte string to an image array.
+
+        :param jpg_bytes: JPEG byte string.
+        :return: Image array.
+        """
+        # Decode the JPEG byte string to an image array
+        image_array = cv2.imdecode(np.frombuffer(jpg_bytes, np.uint8), cv2.IMREAD_COLOR)
+        return image_array
+
+    @staticmethod
+    def Load_From_JPG(jpg_bytes: bytes, guid: uuid.UUID, creation_timestamp: float) -> 'Frame':
+        """
+        Convert a JPEG byte string back to a Frame object.
+
+        :param jpg_bytes: JPEG byte string.
+        :param guid: Optional UUID for the frame.
+        :param creation_timestamp: Optional timestamp for the frame.
+        :return: Frame object.
+        """
+        # Decode the JPEG byte string to an image array
+        image_array = Frame._load_From_JPG(jpg_bytes)
+
+        if guid is None:
+            guid = uuid.uuid4()
+        if creation_timestamp is None:
+            creation_timestamp = time.time()
+
+        return Frame(image_array, GUID=guid, creation_timestamp=creation_timestamp)
+
+    @classmethod
+    def _cache_avro_schema(cls) -> None:
+        """
+        Cache the Avro schema in memory.
+        """
+        schema_path = Path('data', 'avro_schemas', 'frame.avsc')
+        if not schema_path.exists():
+            logger.error(f"Schema file {schema_path} does not exist")
+            raise Exception(f"Schema file {schema_path} does not exist")
+        
+        with open(schema_path, 'r') as file:
+            schema_str = file.read()
+        
+        schema = avro.schema.parse(schema_str)
+
+        
+        cls._avro_cached_schema = schema
+
+    def serialize_avro(self) -> bytes:
+        # raise NotImplementedError("This method is not implemented yet")
+        """
+        Serialize the Frame object to Avro format in memory.
+        :return: BytesIO object containing Avro-encoded data.
+        """
+
+        if not hasattr(self, '_avro_cached_schema'):
+            Frame._cache_avro_schema()
+        schema = self._avro_cached_schema
+
+        frame_data = {
+            "guid": str(self.guid),
+            "creation_timestamp": self.creation_timestamp,
+            "data": self.Export_To_JPG()
+        }
+
+        bytes_writer = BytesIO()
+        writer = DataFileWriter(bytes_writer, DatumWriter(), schema)
+        writer.append(frame_data)
+        writer.flush()
+        bytes_writer.seek(0)
+
+        return bytes_writer.getvalue()
+
+    @staticmethod
+    def deserialize_avro(avro_bytes: bytes) -> 'Frame':
+        """
+        Deserialize Avro data from an in-memory buffer.
+        :param avro_buffer: BytesIO object containing Avro-encoded data.
+        :return: Frame object.
+        """
+        avro_buffer = io.BytesIO(avro_bytes)
+        avro_buffer.seek(0)
+        reader: DataFileReader = DataFileReader(avro_buffer, DatumReader())
+        try:
+            frame_data: dict[str, Any] = next(reader) # type: ignore
+        except StopIteration:
+            logger.error("No data in Avro buffer")
+            raise Exception("No data in Avro buffer")
+        finally:
+            reader.close()
+
+        # verify that the needed attributes are present
+        if 'guid' not in frame_data:
+            logger.error("GUID not present in Avro buffer")
+        if 'creation_timestamp' not in frame_data:
+            logger.error("creation_timestamp not present in Avro buffer")
+        if 'data' not in frame_data:
+            logger.error("data not present in Avro buffer")
+        return Frame.Load_From_JPG(frame_data['data'], guid=uuid.UUID(frame_data['guid']), creation_timestamp=frame_data['creation_timestamp'])

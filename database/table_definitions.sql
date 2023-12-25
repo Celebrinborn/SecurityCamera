@@ -1,21 +1,29 @@
--- table that stores video file names
+USE Home_Automation
+GO;
+CREATE SCHEMA cameras;
+GO;
+
+-- table that stores camera names
+CREATE TABLE cameras.cameras (
+    camera_id INT NOT NULL IDENTITY(1,1),
+    camera_name NVARCHAR(255) NOT NULL,
+    PRIMARY KEY (camera_id)
+);
+
 CREATE TABLE cameras.videos (
-    video_file_name unique NVARCHAR(255) NOT NULL,
+    video_file_name NVARCHAR(255) NOT NULL UNIQUE,
     created_at DATETIME NOT NULL,
-    retain_until DATETIME NOT NULL,
-    deleted_at DATETIME NOT NULL,
+    retain_until DATETIME,
+    deleted_at DATETIME,
     PRIMARY KEY (video_file_name)
 );
-
--- table that stores frames. references video_file_name in mssql
 CREATE TABLE cameras.frames (
     frame_counter_int INT NOT NULL,
-    frame_guid UNIQUEIDENTIFIER unique NOT NULL,
+    frame_guid UNIQUEIDENTIFIER NOT NULL,
     video_file_name NVARCHAR(255) NOT NULL,
-    PRIMARY KEY (frame_guid),
+    PRIMARY KEY (video_file_name, frame_counter_int),
     FOREIGN KEY (video_file_name) REFERENCES cameras.videos(video_file_name)
 );
-
 -- table that stores screenshots. references camera_id in mssql
 CREATE TABLE cameras.screenshots (
     screenshot_id INT NOT NULL IDENTITY(1,1),
@@ -24,13 +32,6 @@ CREATE TABLE cameras.screenshots (
     screenshot_image VARBINARY(MAX) NOT NULL,
     PRIMARY KEY (screenshot_id),
     FOREIGN KEY (camera_id) REFERENCES cameras.cameras(camera_id)
-);
-
--- table that stores camera names
-CREATE TABLE cameras.cameras (
-    camera_id INT NOT NULL IDENTITY(1,1),
-    camera_name NVARCHAR(255) NOT NULL,
-    PRIMARY KEY (camera_id)
 );
 
 -- table that stores a log of motion detected. references camera and frame in mssql

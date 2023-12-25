@@ -175,6 +175,7 @@ class Frame(np.ndarray):
 
         return Frame(image_array, GUID=guid, creation_timestamp=creation_timestamp)
 
+    @DeprecationWarning
     @classmethod
     def _cache_avro_schema(cls) -> None:
         """
@@ -192,7 +193,8 @@ class Frame(np.ndarray):
 
         
         cls._avro_cached_schema = schema
-
+    
+    @DeprecationWarning
     def serialize_avro(self) -> bytes:
         # raise NotImplementedError("This method is not implemented yet")
         """

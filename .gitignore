@@ -21,3 +21,7 @@ image_recognition/models*
 
 # keep config files
 !.vscode/launch.json
+
+
+# ignore all __pycache__ folders
+*/__pycache__/

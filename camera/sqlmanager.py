@@ -254,13 +254,17 @@ class SQLManager:
         self._send_query(sql_command, (str(guid), motion_amount))
     def add_frame_batch(self, batch_data: pd.DataFrame, video_file_path: Path):
         # Writing data to SQL
-        with self._engine.connect() as connection:
-            batch_data.to_sql(
-                'frames',
-                con=connection,
-                schema='cameras',
-                index_label='frame_counter_int',
-                if_exists='append',
-                method='multi',
-                chunksize=500  # Adjust as needed
-            )
+        try:
+            with self._engine.connect() as connection:
+                batch_data.to_sql(
+                    'frames',
+                    con=connection,
+                    schema='cameras',
+                    index_label='frame_counter_int',
+                    if_exists='append',
+                    method='multi',
+                    chunksize=500  # Adjust as needed
+                )
+        except Exception as e:
+            logger.critical(f'Failed to add frame batch to SQL: {e}')
+            #TODO: more specific exception handling

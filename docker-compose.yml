@@ -1,15 +1,14 @@
 version: '3.8'
 
 services:
-
-#   object_detection:
-#     build: ./object_detection
-#     ports:
-#       - "5000:5000"
-#     depends_on:
-#       - db
-#       - kafka
-#       - schema-registry
+    # object_detection:
+    #   build: ./object_detection
+    #   ports:
+    #     - "5000:5000"
+    #   depends_on:
+    #     - db
+    #     - broker
+    #     # - schema-registry
     db:
       container_name: db
       image: mcr.microsoft.com/mssql/server:2019-latest

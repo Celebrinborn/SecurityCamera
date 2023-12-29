@@ -54,7 +54,7 @@ def test_send_frame(mock_kafka_producer, GetFrame):
 
     # When
     kafka_manager = KafkaManager(bootstrap_servers='localhost:9092')
-    kafka_manager.send_frame(topic, frame)
+    kafka_manager.send_motion_alert(topic, frame)
 
     # Then
     mock_send.assert_called_once()  # Check if send was called. You can be more specific based on the serialization format.

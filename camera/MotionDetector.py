@@ -24,7 +24,7 @@ from collections import namedtuple
 
 logger = logging.getLogger(__name__)
 
-topic = 'camera_motion_threshold_exceeded'
+
 motion = namedtuple('motion', ['mean', 'p25', 'p50', 'p75', 'p95', 'std'])
 
 
@@ -105,11 +105,15 @@ class MotionDetector:
             self._motion_detection_thread.join(timeout=3 if timeout <= 0 else timeout)
     
     def _onMotion(self, frame:Frame, motion_amount:float) -> None:
+        # priority is the time since last motion detected + the current unix timestamp.
+        # this means that the longer it has been since the last motion detected, the higher the priority
+        _priority = time.time() + (time.time() - self._last_motion_detected_time) 
         self._last_motion_detected_time = time.time()
         if self._last_message_timestamp + self.message_rate_limit > time.time():
             # if rate limit is exceeded, return
             return
-        self._kafka_manager.send_frame(topic, frame)
+        
+        self._kafka_manager.send_motion_alert(frame, str(self.camera_name), _priority, motion_amount)
         
         self._last_message_timestamp = time.time()
     def _onNoMotion(self, frame:Frame) -> None:

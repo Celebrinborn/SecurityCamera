@@ -107,9 +107,6 @@ class KafkaManager:
         except KafkaError as e:
             logger.error(f'Unable to send camera_motion_threshold_exceeded event : {e}')
 
-
-        
-
     def flush(self):
         self._producer.flush()
 

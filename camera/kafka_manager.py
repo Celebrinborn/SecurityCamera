@@ -5,6 +5,13 @@ from kafka import KafkaProducer
 from kafka.errors import KafkaError
 import json
 
+from avro.io import DatumWriter, BinaryEncoder
+from avro.datafile import DataFileReader, DataFileWriter
+import avro.schema
+import io
+from io import BytesIO
+
+from pathlib import Path
 from camera.frame import Frame
 
 import os
@@ -52,6 +59,21 @@ class KafkaManager:
             raise
 
 
+    @classmethod
+    def _cache_avro_schema(cls) -> None:
+        """
+        Cache the Avro schema in memory.
+        """
+        schema_path = Path('avro_schemas', 'frame.avsc')
+        if not schema_path.exists():
+            logger.error(f"Schema file {schema_path} does not exist")
+            raise Exception(f"Schema file {schema_path} does not exist")
+
+        with open(schema_path, 'r') as file:
+            schema_str = file.read()
+
+        cls._avro_cached_schema = avro.schema.parse(schema_str)
+
     def send_message(self, topic, value:str):
         try:
             future = self._producer.send(topic, bytes(value, 'utf-8'))
@@ -59,23 +81,34 @@ class KafkaManager:
         except KafkaError as e:
             logger.error(f'Error sending message to topic {topic}: {e}')
             #TODO: Need to account for this error more smartly, right now I just ignore it
-    def send_frame(self, topic, frame: Frame):
-        """
-        Serializes a Frame object and sends it to the specified Kafka topic.
+    def send_motion_alert(self, frame: Frame, camera_name: str, priority: float, motion_amount: float, timeout: int = 60*5):
+        topic = 'camera_motion_threshold_exceeded'
+        frame_data = {
+            "camera_name": camera_name,
+            "priority": priority,
+            "guid": str(frame.guid),
+            "creation_timestamp": frame.creation_timestamp,
+            "frame_jpg": frame.Export_To_JPG(),
+            "motion_amount": motion_amount,
+            "timeout": timeout
+        }
 
-        :param topic: The Kafka topic to which the frame will be sent.
-        :param frame: The Frame object to send.
-        """
+        bytes_writer = BytesIO()
+        if not hasattr(self, '_avro_cached_schema'):
+            self._cache_avro_schema()
+        writer = DataFileWriter(bytes_writer, DatumWriter(), self._avro_cached_schema)
+        writer.append(frame_data)
+        writer.flush()
+        bytes_writer.seek(0)
+
         try:
-            # Serialize the Frame object. Choose either JSON or Avro based on your preference.
-            serialized_frame:bytes = frame.serialize_avro()  # or frame.Save_To_JSON()
-            
-            # Send the serialized frame to Kafka
-            future = self._producer.send(topic, serialized_frame)
+            future = self._producer.send(topic, bytes_writer.read())
             return future
         except KafkaError as e:
-            logger.error(f'Error sending frame to topic {topic}: {e}')
-            #TODO: Need to account for this error more smartly, right now I just ignore it
+            logger.error(f'Unable to send camera_motion_threshold_exceeded event : {e}')
+
+
+        
 
     def flush(self):
         self._producer.flush()

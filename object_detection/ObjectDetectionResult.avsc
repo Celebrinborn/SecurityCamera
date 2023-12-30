@@ -1,0 +1,11 @@
+{
+  "namespace": "land.coleman.cameras",
+  "type": "record",
+  "name": "ObjectDetectionResult",
+  "fields": [
+    {"name": "frame_id", "type": "string"},
+    {"name": "camera_name", "type": "string"},
+    {"name": "jpg", "type": "bytes"},
+    {"name": "detections", "type": {"type": "array", "items": "ObjectDetection"}}
+  ]
+}

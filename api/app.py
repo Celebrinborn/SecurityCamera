@@ -41,9 +41,11 @@ logger.debug('creating flask app')
 app = Flask(__name__)
 try:
     # Open the Camera and FileManager objects when the Flask app starts up
-    camera_name = 'webcam'
+    camera_name = os.environ.get('CAMERA_NAME', 'webcam')
+    logger.info(f'camera_name: {camera_name}')
     fps = 10
-    camera_url = 0
+    camera_url = os.environ.get('CAMERA_URL', 0)
+    logger.info(f'camera_url: {camera_url}')
 
     _root_file_location = Path('data', camera_name, 'video_cache')
     _root_file_location.mkdir(parents=True, exist_ok=True)

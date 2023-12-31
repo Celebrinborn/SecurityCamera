@@ -1,14 +1,38 @@
 version: '3.8'
 
 services:
-    # object_detection:
-    #   build: ./object_detection
-    #   ports:
-    #     - "5000:5000"
+    # camera_template: &camera_defaults  # Define camera template
+    #   build: .  # Replace with your actual camera service image
     #   depends_on:
     #     - db
     #     - broker
-    #     # - schema-registry
+    #   environment:
+    #     VIDEO_MAX_LENGTH: 10  # Example value, replace with actual
+    #     MOTION_THRESHOLD: 5  # Example value, replace with actual
+    #     KAFKA_BOOTSTRAP_SERVER: broker:29092
+    #     SA_PASSWORD_FILE: /run/secrets/SA_PASSWORD
+    #     DATABASE_SERVER: db
+    #     FILE_EXTENSION: .mp4  # Example value, replace with actual
+    #     PRODUCTION: "True"
+    #   secrets:
+    #     - SA_PASSWORD
+    #   volumes:
+    #     - /path/to/camera/data:/data  # Replace with actual data path
+
+    # Backdoor_Camera:  # Example of a single camera service
+    #   <<: *camera_defaults  # Referencing the camera template
+    #   environment:
+    #     CAMERA_URL: rtsp://admin:@10.1.1.17:554/h264Preview_01_main  # Replace with actual camera URL
+    #     CAMERA_NAME: Backdoor_Camera
+    object_detection:
+      build: ./object_detection
+      depends_on:
+        - db
+        - broker
+        # - schema-registry
+      volumes:
+        - E:/security_camera/data/object_detection:/data
+        - E:/security_camera/logs/object_detection:/logs
     db:
       container_name: db
       image: mcr.microsoft.com/mssql/server:2019-latest

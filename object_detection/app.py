@@ -1,4 +1,5 @@
 import dataclasses
+from enum import unique
 from math import log
 from optparse import Option
 import os
@@ -9,17 +10,16 @@ import re
 import threading
 import logging
 from dataclasses import dataclass, asdict
-from charset_normalizer import detect
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.consumer.fetcher import ConsumerRecord
 from kafka.errors import KafkaError
-from avro.io import DatumWriter, DatumReader, BinaryEncoder, BinaryDecoder
+from avro.io import DatumWriter, DatumReader, BinaryEncoder, BinaryDecoder, AvroTypeException
 from avro.datafile import DataFileReader, DataFileWriter
 from avro import schema
 
 import json
-from numpy import byte
-from sympy import fu, im
+
+import numpy as np
 
 
 from transformers import YolosImageProcessor, YolosForObjectDetection, PreTrainedModel
@@ -28,13 +28,35 @@ from pathlib import Path
 import torch
 from typing import List, Optional
 
+# delete log file on startup TODO: REMOVE FOR PRODUCTION
+Path('logs', 'app.log').unlink(missing_ok=True)
+
 # Set up logging
 from log_config import configure_logging
+
 configure_logging()
 logger = logging.getLogger()
 
 # mute logging from kafka to exception and above only
 logging.getLogger("kafka").setLevel(logging.ERROR)
+# mute logging from avro to exception and above only
+logging.getLogger("avro").setLevel(logging.ERROR)
+
+def replace_bytes_in_exception(exception):
+    def replace_bytes(obj):
+        if isinstance(obj, bytes):
+            return f"Byte: {len(obj)}"
+        elif isinstance(obj, (list, tuple)):
+            return type(obj)(replace_bytes(item) for item in obj)
+        elif isinstance(obj, dict):
+            return {key: replace_bytes(value) for key, value in obj.items()}
+        return obj
+
+    if exception.args:
+        new_args = replace_bytes(exception.args)
+        exception.args = new_args
+
+    return exception
 
 
 # Dataclass for Kafka message
@@ -45,6 +67,7 @@ class MotionMessageQueueItem:
     guid: str
     creation_timestamp: float
     frame_jpg: Image.Image
+    frame_ndarray: np.ndarray
     motion_amount: float
     timeout: int
 
@@ -85,7 +108,9 @@ class MotionMessageQueueItem:
             priority = avro_data['priority']
             guid = avro_data['guid']
             creation_timestamp = avro_data['creation_timestamp']
+            # extract to numpy then to image
             frame_jpg = Image.open(io.BytesIO(avro_data['frame_jpg']))
+            frame_ndarray = np.frombuffer(avro_data['frame_jpg'], np.uint8)
             motion_amount = avro_data['motion_amount']
             timeout = avro_data['timeout']
         except KeyError as e:
@@ -98,14 +123,25 @@ class MotionMessageQueueItem:
             guid=guid,
             creation_timestamp=creation_timestamp,
             frame_jpg=frame_jpg,
+            frame_ndarray=frame_ndarray,
             motion_amount=motion_amount,
             timeout=timeout
         )
 
 # Dataclass for YOLOs output
 @dataclass
+class BoundingBox:
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    def asdict(self):
+        # Return a dictionary of bounding box values
+        return {"x1": self.x1, "y1": self.y1, "x2": self.x2, "y2": self.y2}
+
+@dataclass
 class Detection:
-    bounding_box: tuple[int, int, int, int]  # You can use a namedtuple if needed
+    bounding_box: BoundingBox # You can use a namedtuple if needed
     classification: str
     certainty: float
         # # example of how to render the image with bounding boxes
@@ -129,7 +165,11 @@ class Detection:
             # cv2.imshow("image", img_np)
             # cv2.waitKey(1)
     def to_dict(self):
-        return asdict(self)
+        return {
+            'bounding_box': self.bounding_box.asdict(),
+            "classification": self.classification,
+            "certainty": self.certainty,
+        }
         
 
 @dataclass
@@ -137,17 +177,20 @@ class DetectionResult:
     frame_id: str
     camera_name: str
     jpg: Image.Image
+    jpg_ndarray: np.ndarray
     detections: List[Detection]
 
     def __repr__(self) -> str:
-        return f'detection_count: {self.frame_id}: {len(self.detections)})'
+        return f'DetectionResult: {self.frame_id}: {len(self.detections)})'
+
+    def __str__(self) -> str:
+        return f'DetectionResult: {self.frame_id}: {len(self.detections)})'
 
     def to_dict(self):
-        assert isinstance(self.jpg, bytes), f"Unexpected type for jpg: {type(self.jpg)}"
         return {
             "frame_id": self.frame_id,
             "camera_name": self.camera_name,
-            "jpg": self.jpg,
+            # "jpg": self.jpg_ndarray.tobytes(),
             "detections": [detection.to_dict() for detection in self.detections],
         }
 
@@ -211,17 +254,21 @@ class KafkaResultProducer:
             writer.append(detection_result_dict)
             writer.flush()
             bytes_writer.seek(0)
-        except Exception as e:
-            logger.error(f'Unable to serialize detection_result_dict : {e}')
-            logger.error(f'detection result dict is {detection_result_dict}')
+        except AvroTypeException as e:
+            logger.error(f'Unable to serialize detection_result_dict : {replace_bytes_in_exception(e)}')
+            raise e
+            return None
+
 
         try:
             # Send the serialized Avro data to the Kafka topic
             future = self._producer.send(self.topic, bytes_writer.read())
-            logger.debug(f"Detection result for {detection_result.frame_id} sent to Kafka topic")
+            # also show unique detections
+            logger.debug(f"Detection result for {detection_result.frame_id} sent to Kafka topic with {len(detection_result.detections)} detections and {[d.classification for d in detection_result.detections]}")
             return future
         except KafkaError as e:
-            logger.error(f'Unable to send camera_motion_threshold_exceeded event : {e}')
+            # logger.error(f'Unable to send {self.topic} event: {replace_bytes_in_exception(e)}')
+            logger.error(f'Unable to send {self.topic} event: {e}')
 # Object Detector
 class ObjectDetector:
     queue: PriorityQueue
@@ -284,7 +331,7 @@ class ObjectDetector:
                 #     f"{round(score.item(), 3)} at location {box}"
                 # )
                 detection = Detection(
-                    bounding_box=box,
+                    bounding_box=BoundingBox(x1=int(box[0]), y1=int(box[1]), x2=int(box[2]), y2=int(box[3])),
                     classification=self.model.config.id2label[label.item()],
                     certainty=round(score.item(), 3)
                 )
@@ -293,7 +340,8 @@ class ObjectDetector:
                 frame_id=item.guid,
                 camera_name=item.camera_name,
                 detections=detections,
-                jpg=item.frame_jpg
+                jpg=item.frame_jpg,
+                jpg_ndarray=np.array(item.frame_ndarray)
             )
         except Exception as e:
             logger.error(f"Error processing image: {e}")

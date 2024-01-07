@@ -26,8 +26,5 @@ COPY ObjectDetectionResult.avsc .
 COPY log_config.py .
 COPY logging.yaml .
 
-# List installed packages for debug
-RUN pip freeze logs/requirements.txt_generated
-
 # Set the entrypoint command
 CMD ["python", "app.py"]

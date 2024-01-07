@@ -246,3 +246,13 @@ class Frame(np.ndarray):
         if 'data' not in frame_data:
             logger.error("data not present in Avro buffer")
         return Frame.Load_From_JPG(frame_data['data'], guid=uuid.UUID(frame_data['guid']), creation_timestamp=frame_data['creation_timestamp'])
+    
+
+    def scale(self, width, height):
+        """
+        Scale the image to the specified width and height.
+        :param width: Width of the scaled image.
+        :param height: Height of the scaled image.
+        :return: Scaled image.
+        """
+        return self.preserve_identity_with(cv2.resize(self, (width, height)))

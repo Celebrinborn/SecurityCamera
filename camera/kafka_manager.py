@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # reduce the amount of logging from kafka
 logging.getLogger('kafka').setLevel(logging.ERROR)
 
+# reduce the amount of logging from avro
+logging.getLogger('avro').setLevel(logging.ERROR)
+
 class KafkaManager:
     _instance = None  # Class-level variable to hold the singleton instance
     _lock = threading.Lock()
@@ -44,19 +47,18 @@ class KafkaManager:
 
         # get bootstrap_servers from env variable if not passed as argument
         if bootstrap_servers is None:
-            bootstrap_servers = os.environ.get('KAFKA_BOOTSTRAP_SERVER', None)
-            # if env variable is not set, log a warning and use default value
-            if bootstrap_servers is None:
-                logger.warning('KAFKA_BOOTSTRAP_SERVER environment variable not set, using default value: localhost:9092')
-                bootstrap_servers = 'localhost:9092'
-
+            bootstrap_servers = os.environ.get('KAFKA_BOOTSTRAP_SERVER', 'localhost:9092')
         try:
             self._producer = KafkaProducer(
                 bootstrap_servers=bootstrap_servers
             )
         except KafkaError as e:
             logger.error(f'Error connecting to Kafka: {e}')
-            raise
+            logger.error(f'bootstrap_servers: {bootstrap_servers}')
+            logger.error(f'KAFKA_BOOTSTRAP_SERVER environment variable: {os.environ.get("KAFKA_BOOTSTRAP_SERVER", "not set")}')
+            
+
+            raise e #TODO: Need to account for this error more smartly, right now I just crash
 
 
     @classmethod
@@ -88,7 +90,7 @@ class KafkaManager:
             "priority": priority,
             "guid": str(frame.guid),
             "creation_timestamp": frame.creation_timestamp,
-            "frame_jpg": frame.Export_To_JPG(),
+            "frame_jpg": frame.scale(height=480, width=640).Export_To_JPG(), #TODO: This is a hack, if filesize is too big avro fails silently
             "motion_amount": motion_amount,
             "timeout": timeout
         }

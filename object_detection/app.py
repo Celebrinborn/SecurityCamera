@@ -28,14 +28,24 @@ from pathlib import Path
 import torch
 from typing import List, Optional
 
-# delete log file on startup TODO: REMOVE FOR PRODUCTION
-Path('logs', 'app.log').unlink(missing_ok=True)
+import subprocess
+
 
 # Set up logging
 from log_config import configure_logging
 
 configure_logging()
 logger = logging.getLogger()
+
+# log running location
+logger.debug(f"Running from {Path.cwd()}")
+# log what files are in the current directory
+logger.debug(f"Files in current directory: {list(Path.cwd().iterdir())}")
+
+logger.debug(f"Environment variables: {os.environ}")
+
+
+logger.debug(f"pip freeze: {subprocess.run(['pip', 'freeze'], capture_output=True, text=True)}")
 
 # mute logging from kafka to exception and above only
 logging.getLogger("kafka").setLevel(logging.ERROR)
@@ -198,11 +208,14 @@ class DetectionResult:
 class KafkaImageConsumer:
     queue: PriorityQueue
     # Environment variables with defaults
-    KAFKA_CONNECTION_STRING: str = os.getenv("KAFKA_CONNECTION_STRING", "localhost:9092")
     topic: str = os.getenv("CONSUMER_TOPIC", "camera_motion_threshold_exceeded")
     
     def __init__(self, queue: PriorityQueue):
+        self.KAFKA_CONNECTION_STRING: str = os.getenv("KAFKA_BOOTSTRAP_SERVER", "localhost:9092")
+        if 'KAFKA_BOOTSTRAP_SERVER' not in os.environ:
+            logger.warning(f"KAFKA_BOOTSTRAP_SERVER environment variable not set. Defaulting to {self.KAFKA_CONNECTION_STRING}")
         try:
+            logger.info(f'Initializing Kafka Consumer. bootstrap server: {self.KAFKA_CONNECTION_STRING}')
             self.consumer = KafkaConsumer(self.topic, bootstrap_servers=[self.KAFKA_CONNECTION_STRING])
             logger.info("Kafka Consumer initialized")
         except KafkaError as e:
@@ -227,17 +240,32 @@ class KafkaImageConsumer:
 
 # Kafka Producer
 class KafkaResultProducer:
-    KAFKA_CONNECTION_STRING: str = os.getenv("KAFKA_CONNECTION_STRING", "localhost:9092")
-    topic: str = os.getenv("PRODUCER_TOPIC", "camera_object_detection_results")
+    KAFKA_CONNECTION_STRING: str 
+    topic: str = 'camera_object_detection_results'
     object_detection_result_schema: schema.Schema
     _producer: KafkaProducer
     def __init__(self):
-        try:
-            self._producer = KafkaProducer(bootstrap_servers=[self.KAFKA_CONNECTION_STRING])
-            logger.info("Kafka Producer initialized")
-        except KafkaError as e:
-            logger.error(f"Error initializing Kafka Producer: {e}")
-            raise
+        self.KAFKA_CONNECTION_STRING = os.getenv("KAFKA_BOOTSTRAP_SERVER", "localhost:9092")
+        if 'KAFKA_BOOTSTRAP_SERVER' not in os.environ:
+            logger.warning(f"KAFKA_BOOTSTRAP_SERVER environment variable not set. Defaulting to {self.KAFKA_CONNECTION_STRING}")
+
+        _success = True
+        for i in range(_max_tries:=10):
+            try:
+                _success = True
+                logger.info(f'Initializing Kafka Producer. bootstrap server: {self.KAFKA_CONNECTION_STRING}')
+                self._producer = KafkaProducer(bootstrap_servers=[self.KAFKA_CONNECTION_STRING])
+                logger.info("Kafka Producer initialized")
+                break
+            except KafkaError as e:
+                logger.error(f"Error initializing Kafka Producer. bootstrap server: {self.KAFKA_CONNECTION_STRING}. Exception: {e}")
+                _success = False
+                if i == _max_tries - 1:
+                    raise e
+        if not _success:
+            # this should be impossible to reach as the for loop should raise an exception before this
+            raise Exception("IT SHOULD BE IMPOSSIBLE TO REACH THIS CONDITION: Unable to initialize Kafka Producer")
+
         objectDetectionResultSchemaText = Path('ObjectDetectionResult.avsc').read_text()
         self.object_detection_result_schema = schema.parse(objectDetectionResultSchemaText)
         
@@ -355,13 +383,10 @@ def main():
         producer = KafkaResultProducer()
         detector = ObjectDetector()
 
-        logger.info("Kafka Consumer thread started")
-
+        logger.info("Starting main loop")
         while True:
             item: MotionMessageQueueItem = consumer.queue.get()
-            logger.debug(f"Processing item from queue: {item}")
-
-            print(f"Processing item from queue: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
+            logger.debug(f"Processing item from queue: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
             detection_result:DetectionResult  = detector.process_image(item)
             producer.send_result(detection_result)
 
@@ -373,5 +398,9 @@ def main():
         raise
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.fatal(f"Unhandled exception in main: {e}")
+        raise
 

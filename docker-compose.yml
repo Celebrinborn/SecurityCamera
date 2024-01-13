@@ -26,7 +26,7 @@ services:
       CAMERA_URL: 'rtsp://admin:@10.1.1.17:554/h264Preview_01_main'
       CAMERA_NAME: backdoor_camera
     ports:
-      - "5000:5000"
+      - "7007:7007"
   
   
   object_detection:

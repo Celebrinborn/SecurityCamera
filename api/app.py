@@ -2,6 +2,7 @@ from collections import namedtuple
 import logging
 import os
 from queue import Queue
+from typing import Union
 import cv2
 from flask import Flask, Response, render_template, current_app
 import numpy as np
@@ -16,38 +17,66 @@ from log_config import configure_logging
 
 from camera.MotionDetector import motion
 
+configure_logging()
+logger = logging.getLogger()
 
-# Configure logging
-if 'PRODUCTION' in os.environ and os.environ['PRODUCTION'] == 'True':
-    configure_logging()
-    logger = logging.getLogger()
-else:
-    configure_logging(clear_log_file=True)
-    logger = logging.getLogger()
-    logger.warning('CLEARED LOG FILE AS production ENVIRONMENT VARIABLE IS NOT SET')
+# list all environment variable names
+logger.debug(f'environment variables: {os.environ.keys()}')
+
+# # Configure logging
+# if 'PRODUCTION' in os.environ and os.environ['PRODUCTION'] == 'True':
+#     configure_logging()
+#     logger = logging.getLogger()
+# else:
+#     configure_logging(clear_log_file=True)
+#     logger = logging.getLogger()
+#     logger.warning('CLEARED LOG FILE AS production ENVIRONMENT VARIABLE IS NOT SET')
 
 
 # For local debugging load the environment variables from the .env file in the secrets folder if it exists
-from dotenv import load_dotenv
-if Path('secrets','.env').is_file():
-    load_dotenv(Path('secrets','.env'))
+# from dotenv import load_dotenv
+# if Path('secrets','.env').is_file():
+#     load_dotenv(Path('secrets','.env'))
 # verify SA_PASSWORD is set
 if 'SA_PASSWORD' not in os.environ:
-    raise ValueError('SA_PASSWORD environment variable is not set')
+    logger.warning('SA_PASSWORD environment variable is not set')
+    # check if /run/secrets/SA_PASSWORD exists
+    if Path('/run/secrets/SA_PASSWORD').is_file():
+        with open('/run/secrets/SA_PASSWORD', 'r') as f:
+            os.environ['SA_PASSWORD'] = f.read()
+            logger.info(f'SA_PASSWORD environment variable is set from /run/secrets/SA_PASSWORD with len {len(os.environ["SA_PASSWORD"])}')
+    else:
+        logger.error('SA_PASSWORD environment variable is not set, and /run/secrets/SA_PASSWORD does not exist')
+        logger.debug(f'does /run/ exist: {Path("/run").is_dir()}')
+        logger.debug(f'does /run/secrets exist: {Path("/run/secrets").is_dir()}')
+        logger.debug(f'contents of /run/secrets: {os.listdir("/run/secrets")}')
+        raise Exception('SA_PASSWORD environment variable is not set, and /run/secrets/SA_PASSWORD does not exist')
 else:
-    logger.debug('SA_PASSWORD environment variable is set')
+    logger.info('SA_PASSWORD environment variable is set directly')
+# verify SA_PASSWORD is not null or empty
+if os.environ['SA_PASSWORD'] is None or os.environ['SA_PASSWORD'] == '':
+    logger.error('SA_PASSWORD environment variable is null or empty')
+    raise Exception('SA_PASSWORD environment variable is null or empty')
 
 logger.debug('creating flask app')
 app = Flask(__name__)
 try:
     # Open the Camera and FileManager objects when the Flask app starts up
-    camera_name = 'webcam'
+    camera_name = os.environ.get('CAMERA_NAME', 'webcam')
+    logger.info(f'camera_name: {camera_name}')
     fps = 10
-    camera_url = 0
+    camera_url = os.environ.get('CAMERA_URL', 0)
+    logger.info(f'camera_url: {camera_url}')
 
     _root_file_location = Path('data', camera_name, 'video_cache')
     _root_file_location.mkdir(parents=True, exist_ok=True)
-    max_folder_size = int(5e+8)# 500 mb #int(5e+9)
+    max_folder_size_str : Union[str, int] = os.environ.get('max_folder_size_bytes', int(5e+8)) # 500 mb #int(5e+9)
+    try:
+        max_folder_size = int(max_folder_size_str)
+        logger.info(f'max_folder_size_bytes: {max_folder_size=}')
+    except ValueError:
+        logger.warning(f'max_folder_size_bytes environment variable is not an int or float, it is: {max_folder_size_str=}')
+        max_folder_size = int(5e+8)
     
     logger.debug('creating filemanager')
     file_Manager = FileManager(_root_file_location, max_folder_size)
@@ -138,4 +167,4 @@ def video_feed():
 
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-app.run(use_reloader=False)
+# app.run(use_reloader=False)

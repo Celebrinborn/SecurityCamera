@@ -1,0 +1,35 @@
+{
+  "namespace": "land.coleman.cameras",
+  "type": "record",
+  "name": "Frame",
+  "fields": [
+    {
+      "name": "camera_name",
+      "type": "string"
+    },
+    {
+      "name": "priority",
+      "type": "float"
+    },
+    {
+      "name": "guid",
+      "type": "string"
+    },
+    {
+      "name": "creation_timestamp",
+      "type": "double"
+    },
+    {
+      "name": "frame_jpg",
+      "type": "bytes"
+    },
+    {
+      "name": "motion_amount",
+      "type": "double"
+    },
+    {
+      "name": "timeout",
+      "type": "int"
+    }
+  ]
+}

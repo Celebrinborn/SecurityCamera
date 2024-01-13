@@ -143,9 +143,17 @@ class SQLManager:
             self._connection_string = f"mssql+pyodbc://{username}:{password}@{server}:{port}/{database}?driver={driver}"
             self._connection_string = f"mssql+pyodbc://{username}:{quote_plus(password)}@{server}:{port}/{database}?driver={driver}"
 
-        self._engine = create_engine(self._connection_string, echo=False)
+
+            logger.error(f'driver: {driver} server: {server}, port: {port}, database: {database}, username: {username}, password len: {len(password)}')
+        logger.info(f'connecting to SQL Server...')
+        try:
+            self._engine = create_engine(self._connection_string, echo=False)
+        except pyodbc.OperationalError as e:
+            logger.critical(f'Failed to connect to SQL Server: {e}')
         # Creating a session factory
         self._session_factory = sessionmaker(bind=self._engine)
+
+        logger.info(f'connected to SQL Server')
 
 
     def __enter__(self):
@@ -186,15 +194,23 @@ class SQLManager:
 
         # Add the new frame to the database
         with self._session_factory() as session:
-            session.add(new_frame)
-            session.commit()
+            try:
+                session.add(new_frame)
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                logger.error(f'Failed to add frame details to SQL: {e}')
     def DoesVideoExists(self, video_path: Path) -> bool:
         # Ensure we are working with an absolute path
         absolute_video_path = str(video_path.resolve())
         
         with self._session_factory() as session:
             # The session provides a query method directly, no need to use a connection for querying
-            video = session.query(SQL_Video).filter_by(video_file_name=absolute_video_path).first()
+            try:
+                video = session.query(SQL_Video).filter_by(video_file_name=absolute_video_path).first()
+            except Exception as e:
+                logger.error(f'Failed to query SQL: {e}')
+                return False
             return video is not None
 
     
@@ -213,8 +229,7 @@ class SQLManager:
                 session.commit()
             except Exception as e:
                 session.rollback()
-                print("Failed to add video:", str(e))
-                raise
+                logger.error(f'Failed to add video to SQL: {e}')
 
     def DeleteVideo(self, video_file_path: Path):
         deleted_at = datetime.datetime.utcnow()
@@ -230,7 +245,10 @@ class SQLManager:
             'video_file_name': str(video_file_path.resolve())
         }
 
-        self._send_query(sql_command, params)
+        try:
+            self._send_query(sql_command, params)
+        except Exception as e:
+            logger.error(f'Failed to delete video from SQL: {e}')
 
                 
     def AddMotion(self, guid:UUID, motion_amount:int):
@@ -254,13 +272,17 @@ class SQLManager:
         self._send_query(sql_command, (str(guid), motion_amount))
     def add_frame_batch(self, batch_data: pd.DataFrame, video_file_path: Path):
         # Writing data to SQL
-        with self._engine.connect() as connection:
-            batch_data.to_sql(
-                'frames',
-                con=connection,
-                schema='cameras',
-                index_label='frame_counter_int',
-                if_exists='append',
-                method='multi',
-                chunksize=500  # Adjust as needed
-            )
+        try:
+            with self._engine.connect() as connection:
+                batch_data.to_sql(
+                    'frames',
+                    con=connection,
+                    schema='cameras',
+                    index_label='frame_counter_int',
+                    if_exists='append',
+                    method='multi',
+                    chunksize=500  # Adjust as needed
+                )
+        except Exception as e:
+            logger.critical(f'Failed to add frame batch to SQL: {e}')
+            #TODO: more specific exception handling

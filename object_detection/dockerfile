@@ -1,26 +1,30 @@
-FROM python:3.12
+# Dockerfile for object detection
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxrender1 \
-    libxext6 \
-    && rm -rf /var/lib/apt/lists/*
+# Use a base image
+FROM python:3.11.1-slim-buster
 
-RUN pip install fastapi uvicorn opencv-python-headless tensorflow==2.6.0
-
-# load model into data folder
-RUN mkdir /app/data
-COPY ./yolov5s.pt /app/data/yolov5s.pt
-
-# Copy code
-COPY . /app
+# Set the working directory
 WORKDIR /app
 
-# Expose ports
-EXPOSE 8000
+# Install the required packages
+# RUN pip install -r requirements.txt
+RUN pip install dataclasses
+RUN pip install kafka-python
+RUN pip install avro-python3
+RUN pip install numpy
+RUN pip install 'transformers[torch]'
+RUN pip install Pillow
+RUN pip install torch
 
-# Set entrypoint
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Copy the requirements file
+COPY requirements.txt .
+
+
+# Copy the source code
+COPY app.py .
+COPY ObjectDetectionResult.avsc .
+COPY log_config.py .
+COPY logging.yaml .
+
+# Set the entrypoint command
+CMD ["python", "app.py"]

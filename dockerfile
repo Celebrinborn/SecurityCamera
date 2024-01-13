@@ -74,13 +74,27 @@ RUN apt-get update \
 
 
 #WORKDIR /app
-ADD ./camera/main.py ./camera/main.py
-ADD ./camera/alerts.py ./camera/alerts.py
-ADD ./camera/camera.py ./camera/camera.py
-ADD ./camera/filemanager.py ./camera/filemanager.py
-ADD ./camera/MotionDetector.py ./camera/MotionDetector.py
-ADD ./camera/ImageRecognitionSender.py ./camera/ImageRecognitionSender.py
-ADD ./flask/app.py ./flask/app.py
-ADD ./flask/config.yaml ./flask/config.yaml
+# ADD ./camera/main.py ./camera/main.py
+# ADD ./camera/alerts.py ./camera/alerts.py
+# ADD ./camera/camera.py ./camera/camera.py
+# ADD ./camera/filemanager.py ./camera/filemanager.py
+# ADD ./camera/MotionDetector.py ./camera/MotionDetector.py
+# ADD ./camera/ImageRecognitionSender.py ./camera/ImageRecognitionSender.py
+# ADD ./flask/app.py ./flask/app.py
 
-CMD ["python", "./flask/app.py"]
+
+
+RUN pip install kafka-python avro-python3 pandas numpy pyodbc sqlalchemy
+
+
+# add camera folder
+ADD ./camera ./camera
+ADD ./api ./api
+ADD ./run.py ./run.py
+ADD ./log_config.py ./log_config.py
+ADD ./logging.yaml ./logging.yaml
+ADD ./avro_schemas ./avro_schemas
+# ADD ./flask/config.yaml ./flask/config.yaml
+
+EXPOSE 5000
+CMD ["python", "./run.py", "--host=0.0.0.0"]

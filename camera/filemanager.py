@@ -255,7 +255,7 @@ class VideoFileManager:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v') if sys.platform == 'win32' else cv2.VideoWriter_fourcc(*'FMP4')
         logger.info(f'creating cv2.videowriter at {video_filename_str} with fourcc {fourcc} at fps {self._fps} at resolution {self._resolution} with max frame length of {self.max_video_length_frame_frames} or {self._resolution} with max frame length of {self.max_video_length_frame_frames / self._fps=} seconds or {self.max_video_length_frame_frames / self._fps / 60=} minutes')
 
-        videowriter = cv2.VideoWriter(video_filename_str, fourcc, self._fps, self._resolution) # type: ignore
+        videowriter = cv2.VideoWriter(video_filename_str, fourcc, self._fps, (self._resolution.width, self._resolution.height))
 
         # using an assert verify the file exists
         # assert video_filename_path.is_file(), f'{video_filename_path} is not a file'
@@ -285,18 +285,21 @@ class VideoFileManager:
     def _video_file_manager_thread_function(self):
         logger.debug('started _video_file_manager_thread_function')
         while not self._kill_video_file_manager_thread.is_set():
-            # get the frame
-            # logger.debug('fetching file from queue')
-            frame = self._queue.get()
-            self._write(frame)
-            self._frame_counter += 1
-            # if self.max_video_length_frame_frames % self._fps*3 ==  self._frame_counter:
-            # logger.debug(f'{self._frame_counter=}, {self.max_video_length_frame_frames=}')
-            if self._frame_counter > self.max_video_length_frame_frames:
-                logger.debug(f'creating new video file as frame counter is at {self._frame_counter}')
-                self._close_video_writer(self._videowriter) # type: ignore
-                self._videowriter = self._open_video_writer(self.create_video_file_name(self._root_video_file_location, time.time()))
-
+            _last_exception:float = time.time()
+            try:
+                # get the frame
+                # logger.debug('fetching file from queue')
+                frame = self._queue.get()
+                self._write(frame)
+                self._frame_counter += 1
+                # if self.max_video_length_frame_frames % self._fps*3 ==  self._frame_counter:
+                # logger.debug(f'{self._frame_counter=}, {self.max_video_length_frame_frames=}')
+                if self._frame_counter > self.max_video_length_frame_frames:
+                    logger.debug(f'creating new video file as frame counter is at {self._frame_counter}')
+                    self._close_video_writer(self._videowriter) # type: ignore
+                    self._videowriter = self._open_video_writer(self.create_video_file_name(self._root_video_file_location, time.time()))
+            except Exception as e:
+                logger.exception(f'An unhandled exception occurred in _video_file_manager_thread_function: {e}')
            
     def _write(self, frame:Frame):
         if self._videowriter is None:
@@ -312,7 +315,7 @@ class VideoFileManager:
     
     @staticmethod
     def scale(frame: Frame, target_resolution: Resolution) -> Frame:
-        scaled_frame = frame.preserve_identity_with(cv2.resize(frame, target_resolution, interpolation=cv2.INTER_AREA))
+        scaled_frame = frame.preserve_identity_with(cv2.resize(frame, (target_resolution.width, target_resolution.height), interpolation=cv2.INTER_AREA))
         # logger.debug(f'scaling frame {frame.shape} to {target_resolution}, identity preserved: {scaled_frame == frame}')
         return scaled_frame
     

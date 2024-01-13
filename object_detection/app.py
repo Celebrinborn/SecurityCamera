@@ -270,7 +270,8 @@ class KafkaResultProducer:
         objectDetectionResultSchemaText = Path('ObjectDetectionResult.avsc').read_text()
         self.object_detection_result_schema = schema.parse(objectDetectionResultSchemaText)
         
-
+    def send_warning(self, topic, message):
+        raise NotImplementedError("send_warning not implemented")
 
     def send_result(self, detection_result: DetectionResult):
         # Serialize the DetectionResult object to Avro format
@@ -386,14 +387,20 @@ def main():
 
         logger.info("Starting main loop")
         while True:
+            # check if queue is full
+            if queue.full():
+                logger.warning(f"Queue is full!!!")
+                try: producer.send_warning("queue_full", f"priority queue is full, {queue.qsize()} items in queue")
+                except NotImplementedError as e: logger.warning(f"{e}") 
             item: MotionMessageQueueItem = consumer.queue.get()
             logger.debug(f"Processing item from queue: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
 
             # if item age is greater than timeout, skip
             if item.creation_timestamp + item.timeout < time.time():
-                logger.debug(f"Skipping item from queue due to timeout: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
+                logger.warning(f"Skipping item from queue due to timeout: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
                 continue
             detection_result:DetectionResult  = detector.process_image(item)
+            logger.debug(f'processing time for frame {detection_result.frame_id=}: {time.time() - item.creation_timestamp=}')
             producer.send_result(detection_result)
 
 

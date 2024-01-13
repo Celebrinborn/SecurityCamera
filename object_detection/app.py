@@ -10,6 +10,7 @@ import re
 import threading
 import logging
 from dataclasses import dataclass, asdict
+import time
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.consumer.fetcher import ConsumerRecord
 from kafka.errors import KafkaError
@@ -387,6 +388,11 @@ def main():
         while True:
             item: MotionMessageQueueItem = consumer.queue.get()
             logger.debug(f"Processing item from queue: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
+
+            # if item age is greater than timeout, skip
+            if item.creation_timestamp + item.timeout < time.time():
+                logger.debug(f"Skipping item from queue due to timeout: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
+                continue
             detection_result:DetectionResult  = detector.process_image(item)
             producer.send_result(detection_result)
 

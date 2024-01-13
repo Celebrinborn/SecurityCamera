@@ -1,5 +1,5 @@
 import argparse
-
+from api.app import app
 import sys
 
 if __name__ == '__main__':
@@ -12,6 +12,4 @@ if __name__ == '__main__':
     sys.stderr.write(f'Running Flask app on {args.host}:{args.port}')
     sys.stderr.flush()
     print(f'Running Flask app on {args.host}:{args.port}')
-
-    from api.app import app
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(debug = True, host='0.0.0.0', port=7007)

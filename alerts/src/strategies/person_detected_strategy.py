@@ -1,6 +1,6 @@
 import logging
 
-from message_strategy import MessageStrategy
+from src.strategies.message_strategy import MessageStrategy
 
 
 

@@ -1,0 +1,30 @@
+{
+  "namespace": "land.coleman.cameras",
+  "type": "record",
+  "name": "ObjectDetectionResult",
+  "fields": [
+    {"name": "frame_id", "type": "string"},
+    {"name": "camera_name", "type": "string"},
+    {"name": "detections", "type": {
+      "type": "array",
+      "items": {
+        "type": "record",
+        "name": "ObjectDetection",
+        "fields": [
+          {"name": "bounding_box", "type": {
+            "type": "record",
+            "name": "BoundingBox",
+            "fields": [
+              {"name": "x1", "type": "int"},
+              {"name": "y1", "type": "int"},
+              {"name": "x2", "type": "int"},
+              {"name": "y2", "type": "int"}
+            ]
+          }},
+          {"name": "classification", "type": "string"},
+          {"name": "certainty", "type": "float"}
+        ]
+      }
+    }}
+  ]
+}

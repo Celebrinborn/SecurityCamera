@@ -8,8 +8,8 @@ x-camera-defaults: &camera_defaults
   secrets:
     - SA_PASSWORD
   volumes:
-    - E:/security_camera/data:/app/data
-    - E:/security_camera/logs:/app/logs
+    - E:/security_camera/data/cameras:/app/data
+    - E:/security_camera/logs/cameras:/app/logs
 x-camera-env-common: &camera_env_common
   KAFKA_BOOTSTRAP_SERVER: broker:29092
   SA_PASSWORD_FILE: /run/secrets/SA_PASSWORD

@@ -68,6 +68,8 @@ try:
     camera_url = os.environ.get('CAMERA_URL', 0)
     logger.info(f'camera_url: {camera_url}')
 
+    logger.info(f'app running from {os.getcwd()}')
+
     _root_file_location = Path('data', camera_name, 'video_cache')
     _root_file_location.mkdir(parents=True, exist_ok=True)
     max_folder_size_str : Union[str, int] = os.environ.get('max_folder_size_bytes', int(5e+8)) # 500 mb #int(5e+9)

@@ -16,7 +16,7 @@ from typing import Generator, Optional, Tuple, Union
 from camera.frame import Frame
 from camera.kafka_manager import KafkaManager
 from dataclasses import dataclass
-from camera.sqlmanager import SQLManager
+# from camera.sqlmanager import SQLManager
 
 import pandas as pd
 
@@ -35,7 +35,7 @@ class MotionDetector:
     _motion_detection_thread: threading.Thread
     _last_message_timestamp: float = 0.0
     _last_motion_detected_time: float = time.time()
-    _sql_manager:SQLManager
+    # _sql_manager:SQLManager
     _kafka_manager:KafkaManager
 
     _current_motion_amount: float = 0.0

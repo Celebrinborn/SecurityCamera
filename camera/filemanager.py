@@ -35,13 +35,13 @@ from typing import Union, Iterable, cast, TextIO, Optional
 import json
 from camera.resolution import Resolution
 
-from camera.sqlmanager import SQLManager
+# from camera.sqlmanager import SQLManager
 
 @dataclass
 class VideoRecord:
     _cache:pd.DataFrame
     batch_size:int
-    sql_manager:SQLManager
+    # sql_manager:SQLManager
     mssql_table:str = '[cameras].[frames]'
     row_curser:int = 0
     
@@ -59,14 +59,14 @@ class VideoRecord:
         self.batch_size = batch_size
 
         # initialize the sql manager
-        self.sql_manager = SQLManager()
+        # self.sql_manager = SQLManager()
         
         # initialize the cache
         self._cache = self.create_cache()
         
         # add the video to the database if it does not exist
-        if not self.sql_manager.DoesVideoExists(self.video_file_path):
-            self.sql_manager.AddVideo(self.video_file_path)
+        # if not self.sql_manager.DoesVideoExists(self.video_file_path):
+        #     self.sql_manager.AddVideo(self.video_file_path)
 
     def write_line(self, frame: Frame, frame_counter_int: int) -> None:
         # send the data to the database
@@ -83,7 +83,7 @@ class VideoRecord:
     def delete(self) -> bool:
         # Delete the file from the filesystem
         try:
-            self.sql_manager.DeleteVideo(self.video_file_path)
+            # self.sql_manager.DeleteVideo(self.video_file_path)
             self.video_file_path.unlink(missing_ok=True)
             return True
         except FileNotFoundError as e:
@@ -120,17 +120,21 @@ class VideoRecord:
 
         logger.debug(f'writing {batch_data.shape} to database')
 
-        self.sql_manager.add_frame_batch(batch_data, self.video_file_path)
+        # self.sql_manager.add_frame_batch(batch_data, self.video_file_path)
         self.row_curser = 0
 
     
 class FileManager:
     _video_records: List[VideoRecord] = []
     def __init__(self, root_folder: Path, max_dir_size_bytes: int):
-        self.sql_manager = SQLManager()
+        # self.sql_manager = SQLManager()
         self.folder_path = root_folder
         self.max_dir_size = max_dir_size_bytes
         self.scan()
+
+        logger.info(f'FileManager initialized. Path: {self.folder_path.absolute()}, max dir size: {self.max_dir_size:,}')
+        logger.info(f'Current size of directory is {(self.get_total_dir_size() / self.max_dir_size * 100):.2f}%. {self.get_total_dir_size():,} of {self.max_dir_size:,}')
+        logger.info(f'Current files in directory: {list(root_folder.glob("*"))}')
     
     def scan(self):
         # Update the _files dictionary with VideoRecord objects
@@ -250,10 +254,17 @@ class VideoFileManager:
     def GetQueue(self) -> Queue:
         return self._queue
     def _open_video_writer(self, video_filename_path:Path) -> cv2.VideoWriter:
+        # create directory if it does not exist
+        if not video_filename_path.parent.exists():
+            logger.debug(f'creating directory {video_filename_path.parent}')
+            video_filename_path.parent.mkdir(parents=True, exist_ok=True)
+
         video_filename_str = str(video_filename_path)
         # create video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v') if sys.platform == 'win32' else cv2.VideoWriter_fourcc(*'FMP4')
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v') if sys.platform == 'win32' else cv2.VideoWriter_fourcc(*'FMP4') # type: ignore
         logger.info(f'creating cv2.videowriter at {video_filename_str} with fourcc {fourcc} at fps {self._fps} at resolution {self._resolution} with max frame length of {self.max_video_length_frame_frames} or {self._resolution} with max frame length of {self.max_video_length_frame_frames / self._fps=} seconds or {self.max_video_length_frame_frames / self._fps / 60=} minutes')
+
+
 
         videowriter = cv2.VideoWriter(video_filename_str, fourcc, self._fps, (self._resolution.width, self._resolution.height))
 

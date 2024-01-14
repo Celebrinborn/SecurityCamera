@@ -15,7 +15,7 @@ x-camera-env-common: &camera_env_common
   SA_PASSWORD_FILE: /run/secrets/SA_PASSWORD
   DATABASE_SERVER: db
   PRODUCTION: "True"
-  max_folder_size_bytes: "1_000_000_000"
+  max_folder_size_bytes: "5_000_000_000" # 5GB
 
 services:
   backdoor_camera:

@@ -19,7 +19,7 @@ class MessageStrategy(ABC):
         raise NotImplementedError
 
     def start_processing(self):
-        self._thread = threading.Thread(target=self._process_messages)
+        self._thread = threading.Thread(target=self._process_messages, name=f'{self.__class__.__name__}_strategy', daemon=True)
         self._thread.start()
 
     def _process_messages(self):

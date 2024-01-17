@@ -44,7 +44,7 @@ def configure_logging(log_file_name: Optional[str] = None, *args, clear_log_file
         for root, dirs, files in os.walk("."):
             for name in files + dirs:
                 print(os.path.join(root, name))
-        raise FileNotFoundError("logging.yaml file not found.")
+        raise FileNotFoundError(f"logging.yaml file not found.")
 
     # Configure the logging module
     with open('logging.yaml', 'r') as f:

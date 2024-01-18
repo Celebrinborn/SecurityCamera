@@ -5,6 +5,7 @@
   "fields": [
     {"name": "frame_id", "type": "string"},
     {"name": "camera_name", "type": "string"},
+    {"name": "frame_jpg", "type": "bytes"},
     {"name": "detections", "type": {
       "type": "array",
       "items": {

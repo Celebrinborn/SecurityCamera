@@ -18,6 +18,19 @@ x-camera-env-common: &camera_env_common
   max_folder_size_bytes: "5_000_000_000" # 5GB
 
 services:
+  alerts:
+    container_name: alerts
+    build: ./alerts
+    secrets:
+      - GMAIL_PASSWORD
+      - GMAIL_TO
+      - GMAIL_USERNAME
+    environment:
+      - BOOTSTRAP_SERVER=broker:29092
+    volumes:
+      - E:/security_camera/data/alerts:/app/data
+      - E:/security_camera/logs/alerts:/app/logs
+
   backdoor_camera:
     <<: *camera_defaults
     container_name: backdoor_camera
@@ -239,5 +252,9 @@ services:
 secrets:
   SA_PASSWORD:
     file: ./secrets/SA_PASSWORD
-  example:
-    file: ./secrets/.env
+  GMAIL_PASSWORD:
+    file: ./secrets/GMAIL_PASSWORD
+  GMAIL_TO:
+    file: ./secrets/GMAIL_TO
+  GMAIL_USERNAME:
+    file: ./secrets/GMAIL_USERNAME

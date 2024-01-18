@@ -1,22 +1,28 @@
+import datetime
 import io
 import logging
 import os
+
 from log_config import configure_logging
 
 from typing import List, Optional
 from dataclasses import dataclass
+from queue import Queue
 
 import threading
+from senders.message_sender import Sender
+from senders.SMTPSender import SMTPSender
 
 from strategies.message_strategy import MessageStrategy
 from strategies.person_detected_strategy import PersonDetectedStrategy
 
-from kafka import KafkaConsumer, KafkaProducer
-from avro.io import DatumReader
-import io
-from avro.datafile import DataFileReader
 
-import dotenv
+
+from kafka import KafkaConsumer, KafkaProducer
+from kafka.consumer.fetcher import ConsumerRecord
+
+
+
 from pathlib import Path
 
 configure_logging()
@@ -24,186 +30,137 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 if Path('.env').exists():
+    import dotenv
     logger.info('Loading environment variables from .env file')
     dotenv.load_dotenv('.env')
     logger.info(f'Environment variables loaded from .env file: {", ".join([key for key, value in os.environ.items()])}')
+
+# Load environment variables from Docker secrets if running in Docker
+secrets_dir = Path('/run/secrets/')
+if secrets_dir.exists():
+    for secret_file in secrets_dir.iterdir():
+        if secret_file.is_file():
+            # Read the content of each secret file
+            secret = secret_file.read_text().strip()
+            # Set the content as an environment variable
+            os.environ[secret_file.name] = secret
 
 # mute logging from kafka to exception and above only
 logging.getLogger("kafka").setLevel(logging.ERROR)
 # mute logging from avro to exception and above only
 logging.getLogger("avro").setLevel(logging.ERROR)
 
-@dataclass
-class BoundingBox:
-    x1: int
-    y1: int
-    x2: int
-    y2: int
-
-@dataclass
-class ObjectDetection:
-    bounding_box: BoundingBox
-    classification: str
-    certainty: float
-
-@dataclass
-class ObjectDetectionResult:
-    frame_id: str
-    camera_name: str
-    detections: List[ObjectDetection]
 
 class KafkaConsumerManager:
     thread:threading.Thread
-    def __init__(self, topic:[str, list[str]], bootstrap_servers:str, schema):
-        self.thread = threading.Thread(target=self.run, args=(), daemon=True, name='KafkaConsumerManager')
+    message_queue:Queue
+    def __init__(self, queue:Queue, topic:[str, list[str]], bootstrap_servers:str, schema):
+        self.message_queue = queue
+        self.thread = threading.Thread(target=self._run, args=(), daemon=True, name='KafkaConsumerManager')
         self.topic = topic
         self.schema = schema
         self.consumer = KafkaConsumer(
             self.topic,
             bootstrap_servers=bootstrap_servers
         )
-        self.thread.start()
 
 
-    def run(self):
+    def _run(self):
         logger.debug('Starting Kafka consumer thread')
         for message in self.consumer:
-            message_data = io.BytesIO(message.value)
-            message_data.seek(0)
-
-            logger.debug(f"Received message: {str(message_data)}")
-
-            # Deserialize using Avro
-            avro_reader = DataFileReader(message_data, DatumReader())
-            for record in avro_reader:
-                detection_result = ObjectDetectionResult(
-                    frame_id=record['frame_id'],
-                    camera_name=record['camera_name'],
-                    detections=[
-                        ObjectDetection(
-                            bounding_box=BoundingBox(
-                                x1=detection['bounding_box']['x1'],
-                                y1=detection['bounding_box']['y1'],
-                                x2=detection['bounding_box']['x2'],
-                                y2=detection['bounding_box']['y2']
-                            ),
-                            classification=detection['classification'],
-                            certainty=detection['certainty']
-                        )
-                        for detection in record['detections']
-                    ]
-                )
-
-                # Process the ObjectDetectionResult instance
-                # E.g., print, log, or perform some action
-                print(detection_result)
-
-            avro_reader.close()
+            self.message_queue.put(message)
+            
+            
 
     def stop(self):
         self.consumer.close()
 
 
-
-class Main:
-    def __init__(self):
-        self.strategies:List[MessageStrategy] = [PersonDetectedStrategy()]
-
-    def initialize_strategies(self):
-        # Initialize and run strategies
-        for strategy in self.strategies:
-            strategy.start_processing()
-
-    # Context manager methods
-    def __enter__(self):
-        self.initialize_strategies()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # Clean-up code
-        pass
-
-
 if __name__ == '__main__':
     logger.info('Starting application')
-    with Main() as main:
-        logger.info('Application started')
-        
 
-        # Usage example
-        topic = 'camera_object_detection_results'
-        schema = '''{
-                "fields": [
-                    {
-                    "name": "frame_id",
-                    "type": "string"
-                    },
-                    {
-                    "name": "camera_name",
-                    "type": "string"
-                    },
-                    {
-                    "name": "jpg",
-                    "type": "bytes"
-                    },
-                    {
-                    "name": "detections",
-                    "type": {
-                        "items": {
-                        "fields": [
+
+    logger.debug(f'list of env vars: {", ".join([key for key, value in os.environ.items()])}')
+
+    message_queue:Queue[ConsumerRecord] = Queue()
+
+    # configure strategies
+    strategies:List[MessageStrategy] = [PersonDetectedStrategy(message_queue = message_queue, senders=[SMTPSender()])]
+    for strategy in strategies:
+        strategy.start_processing()   
+
+    # Create and start the Kafka consumer thread
+    topic = 'camera_object_detection_results'
+    schema = '''{
+            "fields": [
+                {
+                "name": "frame_id",
+                "type": "string"
+                },
+                {
+                "name": "camera_name",
+                "type": "string"
+                },
+                {
+                "name": "jpg",
+                "type": "bytes"
+                },
+                {
+                "name": "detections",
+                "type": {
+                    "items": {
+                    "fields": [
+                        {
+                        "name": "bounding_box",
+                        "type": {
+                            "fields": [
                             {
-                            "name": "bounding_box",
-                            "type": {
-                                "fields": [
-                                {
-                                    "name": "x1",
-                                    "type": "int"
-                                },
-                                {
-                                    "name": "y1",
-                                    "type": "int"
-                                },
-                                {
-                                    "name": "x2",
-                                    "type": "int"
-                                },
-                                {
-                                    "name": "y2",
-                                    "type": "int"
-                                }
-                                ],
-                                "name": "BoundingBox",
-                                "type": "record"
-                            }
+                                "name": "x1",
+                                "type": "int"
                             },
                             {
-                            "name": "classification",
-                            "type": "string"
+                                "name": "y1",
+                                "type": "int"
                             },
                             {
-                            "name": "certainty",
-                            "type": "float"
+                                "name": "x2",
+                                "type": "int"
+                            },
+                            {
+                                "name": "y2",
+                                "type": "int"
                             }
-                        ],
-                        "name": "ObjectDetection",
-                        "type": "record"
+                            ],
+                            "name": "BoundingBox",
+                            "type": "record"
+                        }
                         },
-                        "type": "array"
-                    }
-                    }
-                ],
-                "name": "ObjectDetectionResult",
-                "namespace": "land.coleman.cameras",
-                "type": "record"
-                }'''
-        bootstrap_servers = os.environ.get('BOOTSTRAP_SERVER', 'localhost:9092')
+                        {
+                        "name": "classification",
+                        "type": "string"
+                        },
+                        {
+                        "name": "certainty",
+                        "type": "float"
+                        }
+                    ],
+                    "name": "ObjectDetection",
+                    "type": "record"
+                    },
+                    "type": "array"
+                }
+                }
+            ],
+            "name": "ObjectDetectionResult",
+            "namespace": "land.coleman.cameras",
+            "type": "record"
+            }'''
+    bootstrap_servers = os.environ.get('BOOTSTRAP_SERVER', 'localhost:9092')
+    consumer_manager = KafkaConsumerManager(queue=message_queue, topic=topic, bootstrap_servers=bootstrap_servers, schema=schema)
+    consumer_manager.thread.start()
 
-        # Create and start the Kafka consumer thread
-        consumer_manager = KafkaConsumerManager(topic=topic, bootstrap_servers=bootstrap_servers, schema=schema)
+    logger.info('application fully running, press Ctrl+C to exit')
+    consumer_manager.thread.join()
 
 
-        logger.info('waiting for consumer thread to finish. this should never happen')
-        consumer_manager.thread.join()
-
-
-        
+    

@@ -201,7 +201,7 @@ class DetectionResult:
         return {
             "frame_id": self.frame_id,
             "camera_name": self.camera_name,
-            # "jpg": self.jpg_ndarray.tobytes(),
+            "frame_jpg": self.jpg_ndarray.tobytes(),
             "detections": [detection.to_dict() for detection in self.detections],
         }
 
@@ -294,7 +294,7 @@ class KafkaResultProducer:
             # Send the serialized Avro data to the Kafka topic
             future = self._producer.send(self.topic, bytes_writer.read())
             # also show unique detections
-            logger.debug(f"Detection result for {detection_result.frame_id} sent to Kafka topic with {len(detection_result.detections)} detections and {[d.classification for d in detection_result.detections]}")
+            logger.debug(f"Detection result for {detection_result.frame_id} sent to Kafka topic with {len(detection_result.detections)} detections and {[(d.classification, d.certainty) for d in detection_result.detections]}")
             return future
         except KafkaError as e:
             # logger.error(f'Unable to send {self.topic} event: {replace_bytes_in_exception(e)}')

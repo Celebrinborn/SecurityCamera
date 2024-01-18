@@ -73,7 +73,7 @@ RUN apt-get update \
 
 
 
-#WORKDIR /app
+WORKDIR /app
 # ADD ./camera/main.py ./camera/main.py
 # ADD ./camera/alerts.py ./camera/alerts.py
 # ADD ./camera/camera.py ./camera/camera.py

@@ -37,7 +37,7 @@ class KafkaManager:
         
         # If no instance exists, create a new one and store it in _instance
         cls._instance = super().__new__(cls)
-        logger.debug('SQLManager does not exist, creating new instance')
+        logger.debug('Kafka Manager does not exist, creating new instance')
         return cls._instance
 
     def __init__(self, bootstrap_servers=None):

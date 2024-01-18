@@ -8,16 +8,29 @@ x-camera-defaults: &camera_defaults
   secrets:
     - SA_PASSWORD
   volumes:
-    - E:/security_camera/data:/app/data
-    - E:/security_camera/logs:/app/logs
+    - E:/security_camera/data/cameras:/app/data
+    - E:/security_camera/logs/cameras:/app/logs
 x-camera-env-common: &camera_env_common
   KAFKA_BOOTSTRAP_SERVER: broker:29092
   SA_PASSWORD_FILE: /run/secrets/SA_PASSWORD
   DATABASE_SERVER: db
   PRODUCTION: "True"
-  max_folder_size_bytes: "1_000_000_000"
+  max_folder_size_bytes: "5_000_000_000" # 5GB
 
 services:
+  alerts:
+    container_name: alerts
+    build: ./alerts
+    secrets:
+      - GMAIL_PASSWORD
+      - GMAIL_TO
+      - GMAIL_USERNAME
+    environment:
+      - BOOTSTRAP_SERVER=broker:29092
+    volumes:
+      - E:/security_camera/data/alerts:/app/data
+      - E:/security_camera/logs/alerts:/app/logs
+
   backdoor_camera:
     <<: *camera_defaults
     container_name: backdoor_camera
@@ -239,5 +252,9 @@ services:
 secrets:
   SA_PASSWORD:
     file: ./secrets/SA_PASSWORD
-  example:
-    file: ./secrets/.env
+  GMAIL_PASSWORD:
+    file: ./secrets/GMAIL_PASSWORD
+  GMAIL_TO:
+    file: ./secrets/GMAIL_TO
+  GMAIL_USERNAME:
+    file: ./secrets/GMAIL_USERNAME

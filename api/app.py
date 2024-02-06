@@ -17,7 +17,7 @@ from log_config import configure_logging
 
 from camera.MotionDetector import motion
 
-configure_logging()
+configure_logging(log_file_name=f'{os.environ.get("CAMERA_NAME", "unknown_camera")}.jsonl')
 logger = logging.getLogger()
 
 # list all environment variable names

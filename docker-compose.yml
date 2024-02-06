@@ -16,6 +16,7 @@ x-camera-env-common: &camera_env_common
   DATABASE_SERVER: db
   PRODUCTION: "True"
   max_folder_size_bytes: "5_000_000_000" # 5GB
+  restart: unless-stopped
 
 services:
   alerts:
@@ -30,6 +31,7 @@ services:
     volumes:
       - E:/security_camera/data/alerts:/app/data
       - E:/security_camera/logs/alerts:/app/logs
+    restart: unless-stopped
 
   backdoor_camera:
     <<: *camera_defaults
@@ -39,8 +41,25 @@ services:
       CAMERA_URL: 'rtsp://admin:@10.1.1.17:554/h264Preview_01_main'
       CAMERA_NAME: backdoor_camera
     ports:
-      - "7007:7007"
-  
+      - "7017:7007"
+  front_yard_east_camera:
+    <<: *camera_defaults
+    container_name: front_yard_east_camera
+    environment:
+      <<: *camera_env_common
+      CAMERA_URL: 'rtsp://admin:@10.1.1.18:554/h264Preview_01_main'
+      CAMERA_NAME: front_yard_east_camera
+    ports:
+      - "7018:7007"
+  front_east_east_camera:
+    <<: *camera_defaults
+    container_name: front_east_east_camera
+    environment:
+      <<: *camera_env_common
+      CAMERA_URL: 'rtsp://admin:@10.1.1.16:554/h264Preview_01_main'
+      CAMERA_NAME: front_east_east_camera
+    ports:
+      - "7016:7007"
   
   object_detection:
     container_name: object_detection
@@ -102,6 +121,7 @@ services:
     volumes:
       - E:/security_camera/data/kafka_data:/var/lib/kafka/data
       - E:/security_camera/logs/kafka_logs:/var/lib/kafka/logs
+    restart: unless-stopped
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.2
@@ -117,6 +137,7 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     volumes:
       - E:/security_camera/data/schema_registry_data:/var/lib/schema-registry
+    restart: unless-stopped
 
   connect:
     image: cnfldemos/cp-server-connect-datagen:0.6.2-7.5.0
@@ -148,6 +169,7 @@ services:
       CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
     volumes:
       - E:/security_camera/data/connect_data:/var/lib/kafka-connect
+    restart: unless-stopped
 
   control-center: # http://localhost:9021/
     image: confluentinc/cp-enterprise-control-center:7.5.2
@@ -174,6 +196,7 @@ services:
       PORT: 9021
     volumes:
       - E:/security_camera/data/control_center_data:/var/lib/confluent-control-center
+    restart: unless-stopped
 
   ksqldb-server:
     image: confluentinc/cp-ksqldb-server:7.5.2
@@ -199,6 +222,7 @@ services:
       KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
     volumes:
       - E:/security_camera/data/ksqldb_server_data:/var/lib/ksql
+    restart: unless-stopped
 
   ksqldb-cli:
     image: confluentinc/cp-ksqldb-cli:7.5.2
@@ -209,6 +233,7 @@ services:
       - ksqldb-server
     entrypoint: /bin/sh
     tty: true
+    restart: unless-stopped
 
   ksql-datagen:
     image: confluentinc/ksqldb-examples:7.5.2
@@ -231,6 +256,7 @@ services:
       STREAMS_BOOTSTRAP_SERVERS: broker:29092
       STREAMS_SCHEMA_REGISTRY_HOST: schema-registry
       STREAMS_SCHEMA_REGISTRY_PORT: 8081
+    restart: unless-stopped
 
   rest-proxy:
     image: confluentinc/cp-kafka-rest:7.5.2
@@ -248,6 +274,7 @@ services:
       KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
     volumes:
       - E:/security_camera/data/rest_proxy_data:/var/lib/kafka-rest
+    restart: unless-stopped
 
 secrets:
   SA_PASSWORD:

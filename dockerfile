@@ -70,7 +70,11 @@ RUN apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
     && apt-get clean
 
-
+# Install FFmpeg
+RUN apt-get update && \
+    apt-get install -y ffmpeg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 
 WORKDIR /app
@@ -85,6 +89,7 @@ WORKDIR /app
 
 
 RUN pip install kafka-python avro-python3 pandas numpy pyodbc sqlalchemy
+RUN pip install av
 
 
 # add camera folder

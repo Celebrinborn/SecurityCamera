@@ -21,7 +21,7 @@ configure_logging(log_file_name=f'{os.environ.get("CAMERA_NAME", "unknown_camera
 logger = logging.getLogger()
 
 # list all environment variable names
-logger.debug(f'environment variables: {os.environ.keys()}')
+# logger.debug(f'environment variables: {os.environ.keys()}')
 
 # check for env file
 if Path('secrets','.env').is_file():
@@ -89,7 +89,7 @@ try:
     file_Manager = FileManager(_root_file_location, max_folder_size)
 
     logger.debug('creating camera')
-    camera = Camera(camera_name=camera_name, camera_url = camera_url, max_fps=fps)
+    camera = Camera(camera_url = camera_url, max_fps=fps)
     # set the camera resolution to 240p
     _resolution = Resolution(320,240)
     video_file_manager = VideoFileManager(root_video_file_location=_root_file_location, resolution=_resolution, fps= fps, file_manager=file_Manager)

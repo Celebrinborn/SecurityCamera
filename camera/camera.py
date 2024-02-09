@@ -1,6 +1,17 @@
 import logging
+import platform
+import subprocess
+import re
+
+
 logger = logging.getLogger(__name__)
-import cv2
+# import cv2
+import av
+import av.container
+import av.video
+import av.error
+import av.codec
+import av.codec
 import numpy as np
 import os
 from queue import Queue
@@ -41,8 +52,8 @@ class SubscriptionManager:
         if queue in self._subscribed_queues:
             self._subscribed_queues.remove(queue)
 
-    def _add_frame_to_queues(self, frame: np.ndarray):
-        assert isinstance(frame, np.ndarray), 'camera is attempting to put a non-ndarray on the queues'
+    def _add_frame_to_queues(self, frame: Frame):
+        assert isinstance(frame, Frame), 'camera is attempting to put a non-Frame object into a queue'
         for queue in self._subscribed_queues:
             queue.put(frame)
     
@@ -51,8 +62,8 @@ class Camera:
     """
     Class for a camera that captures frames and sends them to subscribed queues.
     """
-    _camera: cv2.VideoCapture
-    _camera_name:str
+    _camera: av.container.InputContainer
+    _stream: av.video.VideoStream
     _camera_url: Union[str, int]
     _max_fps: int
     _killDaemon: bool  # flag to abort capture daemon
@@ -64,7 +75,74 @@ class Camera:
 
     _time_of_last_frame:float = 0.0
 
-    def __init__(self, camera_name:str, camera_url:Union[str, int], max_fps:int, cv2_module: typing.Type[cv2.VideoCapture]=cv2.VideoCapture) -> None:
+
+    @staticmethod
+    def find_ip_address(input_string):
+        # Regular expression pattern for matching an IP address
+        ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+        
+        # Search for the pattern in the input string
+        match = re.search(ip_pattern, input_string)
+        
+        # If a match is found, return the matched IP address, else return None
+        return match.group(0) if match else None
+    @staticmethod
+    def _ping(host):
+        # Determine the current operating system
+        current_os = platform.system().lower()
+        
+        # Command prefix: different options for Windows
+        command_prefix = ['ping', '-c', '1'] if current_os != "windows" else ['ping', '-n', '1']
+        
+        # Construct the full command
+        command = command_prefix + [host]
+        
+        try:
+            # Execute the ping command
+            output = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            # Return True if the host is reachable (returncode is 0), False otherwise
+            return output.returncode == 0
+                
+        except Exception:
+            return False
+
+    def _connect_to_camera(self, camera_url:Union[str, int]):
+        # close the camera if it is already open
+        logger.debug('checking if _camera attribute exists')
+        if hasattr(self, '_camera'):
+            logger.debug('closing camera')
+            self._camera.close()
+        
+        # connect to the camera
+        try:
+            logger.debug(f'connecting to camera {camera_url}')
+            options = {'rtsp_transport': 'tcp'}
+            self._camera = av.open('rtsp://admin:@10.1.1.17:554/h264Preview_01_main', options=options)
+            
+            logger.debug('getting video stream')
+            stream = next((s for s in self._camera.streams if s.type == 'video'), None)
+            if stream is None:
+                logger.error(f'no video stream found for camera {self._camera_url}')
+                raise NotImplementedError("error handling for a connection refusal has not been implemented yet")
+                return False
+            self._stream = stream
+
+            self._frame_width = self._stream.width
+            self._frame_height = self._stream.height
+
+            logger.debug(f'camera connected successfully')
+
+        except av.AVError as e:
+            #TODO: handle the error
+            logger.exception(f'camera {self._camera_url} refused to connect. There may already be an active connection to the camera')
+            raise NotImplementedError("error handling for a connection refusal has not been implemented yet") from e
+        except Exception as e:
+            logger.exception('An unexpected error occurred while connecting to the camera.', exc_info=True, stack_info=True)
+            raise e
+
+    def __init__(self, camera_url:Union[str, int], max_fps:int) -> None:
+
         """
         Initializes the camera instance.
 
@@ -74,75 +152,62 @@ class Camera:
             max_fps (int): The maximum number of frames per second that the camera should capture.
             cv2_module (cv2.VideoCapture): The module to use for capturing the frames.
         """
-        self._camera_name = camera_name
         self._camera_url = camera_url
         self._max_fps = max_fps
-        self._cv2:cv2.VideoCapture = cv2_module
-        logger.debug('running Camera class init')
-        
-        # using the dependency injection approach to assist with testing
-        try:
-            # using the dependency injection approach to assist with testing
-            self._camera = self._cv2(self._camera_url)
-        except ConnectionRefusedError as e:
-            logger.exception(f'camera {camera_name} at {camera_url} refused to connect. There may already be an active connection to the camera')
-            raise NotImplementedError("error handling for a connection refusal has not been implemented yet") from e
 
-        # check if camera opened successfully
-        if not self._camera.isOpened():
-            logger.error(f'unable to open camera {camera_name} at {camera_url}')
-            logger.error(f'type of _camera: {type(self._camera)} type of _cv2 module {type(self._cv2)}')
-        else:
-            logger.info(f'opened camera {camera_name} at {camera_url}')
-
-        # Read the current frame from the camera object and assign it to a variable
-        # to ensure that prevFrame has something to populate later in the application
-        logger.debug('reading first frame from camera')
-        for i in range (5):
-            _successful_camera_read, _frame = self._camera.read()
-            with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', category=UserWarning)
-                self.currentFrame = Frame(_frame)
-            if _successful_camera_read:
-                logger.info('successfully read first frame from camera')
-                break
+        # checking if the camera_url is an IP address
+        if isinstance(camera_url, str):
+            ip_address = self.find_ip_address(camera_url)
+            if ip_address:
+                logger.debug(f'camera_url is an IP address: {camera_url}')
             else:
-                _sleep_time = 1
-                logger.warning(f'unable to read from camera. attempt {i} sleeping {_sleep_time} seconds...')
-                time.sleep(_sleep_time)
+                logger.debug(f'camera_url is not an IP address: {camera_url}')
+        # ping the camera to check if it is reachable
+        if ip_address:
+            logger.debug(f'pinging camera {camera_url}')
+            if not self._ping(ip_address):
+                logger.error(f'camera {camera_url} is not reachable')
+            else:
+                logger.debug(f'camera {camera_url} is reachable')
 
-        if not isinstance(self.currentFrame, np.ndarray):
-            logger.critical(f"currentFrame is not an ndarray, type: {type(self.currentFrame)}", stack_info=True)
-            #logger.critical()
-            raise TypeError("currentFrame is not an ndarray")
+        # log av.__version__
+        logger.debug(f'av.__version__ = {av.__version__}')
 
-        self._frame_height, self._frame_width, _ = self.currentFrame.shape
-        logger.debug(f'frame height and width are {self._frame_height, self._frame_width}')
+        logger.debug(f'codexes available: {[codex for codex in av.codec.codecs_available]}')
+
+
+        # connect to the camera
+        logger.debug(f'connecting to camera {camera_url}')
+        self._connect_to_camera(camera_url)
 
         self._subscription_manager = SubscriptionManager()
 
+        logger.debug(f'starting to read frames from camera {camera_url}')
         self.Start()
 
         # start the health check thread
+        # logger.info(f'starting health monitor for camera {camera_url}')
         self._health_check_thread = threading.Thread(target=self._heartbeat, name='Camera_Health_Check', daemon=True)
         self._health_check_thread.start()
 
+        logger.info(f'camera {camera_url} has been initialized')
+
     def _heartbeat(self):
-        logger.info(f'starting health monitor for camera {self._camera_name}')
+        logger.info(f'starting health monitor for camera {self._camera_url}')
         while True:
             if time.time() - self._time_of_last_frame > 5:
-                logger.warning(f'heartbeat camera {self._camera_name} has not received a frame in 5 seconds')
+                logger.warning(f'heartbeat camera {self._camera_url} has not received a frame in 5 seconds')
 
                 # kill the camera thread
-                logger.info(f'killing camera thread {self._camera_name}')
+                logger.info(f'killing camera thread {self._camera_url}')
                 self.Stop()
-                logger.info(f'waiting for camera thread {self._camera_name} to die')
+                logger.info(f'waiting for camera thread {self._camera_url} to die')
                 self.camera_thread.join()
 
-                logger.info(f'restarting camera thread {self._camera_name}')
+                logger.info(f'restarting camera thread {self._camera_url}')
                 self.Start()
             else:
-                logger.debug(f'heartbeat camera {self._camera_name} has received a frame {time.time() - self._time_of_last_frame:.02f} seconds ago')
+                logger.debug(f'heartbeat camera {self._camera_url} has received a frame {time.time() - self._time_of_last_frame:.02f} seconds ago')
             time.sleep(30)
 
     # Define the __enter__ method for the Camera class
@@ -152,19 +217,13 @@ class Camera:
         """
         return self
 
-    def close(self):
-        """
-        Closes the camera instance.
-        """
-        self._camera.release()
-        logger.debug('running Camera class exit')
-
     def __exit__(self, exc_type, exc_value, traceback):
         """
         Exits the camera instance.
         """
         self.Stop()
-        self.close()
+        if hasattr(self, '_camera'):
+            self._camera.close()
 
     def GetFrame(self) -> Generator[Frame, None, None]:
         """
@@ -173,7 +232,37 @@ class Camera:
         Returns:
             Frame: The current frame from the camera.
         """
-        # logger.debug('starting Camera class getframe')
+        
+        for i in range(10):
+            try:
+                # logger.debug('starting Camera class getframe')
+                for packet in self._camera.demux(self._stream):
+                    try:
+                        np_frames:list[np.ndarray] = [frame.to_ndarray(format='bgr24') for frame in packet.decode()]
+                    except av.error.InvalidDataError as e:
+                        logger.warning(f'camera {self._camera_url} has experienced an InvalidDataError while reading frames, skipping frame', exc_info=True, stack_info=True)
+                    except av.error.CorruptDataError as e:
+                        logger.warning(f'camera {self._camera_url} has experienced a CorruptDataError while reading frames, skipping frame', exc_info=True, stack_info=True)
+                    except Exception as e:
+                        logger.exception(f'camera {self._camera_url} has experienced an unexpected error while reading frames', exc_info=True, stack_info=True)                        
+                    # suppress the Frame creation warning and create the frame
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=UserWarning)
+                        frames:list[Frame] = [Frame(np_frame) for np_frame in np_frames]
+                    for frame in frames:
+                        yield frame
+            except av.error.EOFError as e:
+                logger.exception("av.error.EOFError: The camera has stopped sending frames. The camera may have been disconnected or the stream may have ended.", exc_info=True, stack_info=True)
+                raise NotImplementedError("error handling for a connection refusal has not been implemented yet") from e
+                #TODO: handle the error
+            except Exception as e:
+                logger.exception(f'camera {self._camera_url} has experienced an error while reading frames, retrying attempt {i} of 10', exc_info=True, stack_info=True)
+                time.sleep(1)
+        raise NotImplementedError("error handling for a full demux exception has not been implemented yet")
+
+
+
+
         while True: #self._camera == True:
             # read the camera frame to a temp variable
             ret, _frame = self._camera.read()
@@ -230,15 +319,18 @@ class Camera:
             Returns:
                 None
             """
+            last_frame_time = time.time()
+            fps_cache = 1/fps
+            logger.debug(f'fps_cache = {fps_cache}')
             for frame in self.GetFrame():
                 if self._killDaemon:  # check flag to stop thread
                     break
-                start = time.time()
+                # check if time sense last frame is less than 1/fps
+                if time.time() - last_frame_time < fps_cache:
+                    # logger.debug(f'frame rate is too high, skipping frame')
+                    continue
+                last_frame_time = time.time()
                 subscriptionManager._add_frame_to_queues(frame)
-                end = time.time()
-                elapsed_time = end - start
-                time_to_sleep = max(1.0 / fps - elapsed_time, 0)
-                time.sleep(time_to_sleep)
         self.camera_thread = threading.Thread(target=_capture, 
                                   name="Camera_Thread", 
                                   daemon=True,

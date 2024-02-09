@@ -130,6 +130,33 @@ def camera_route():
     logger.debug(r'entered /camera')
     return render_template('camera.html', camera_name = camera_name)
 
+@app.route('/motion_config')
+def motion_config():
+    logger.debug(r'entered /motion_config')
+    return render_template('motion_config.html', camera_name = camera_name)
+
+@app.route('/motion_feed')
+def motion_feed():
+    logger.debug(r'entered /motion_feed')
+    def generate_motion_frames():
+        logger.info('subscribing motion')
+        motion_detector: MotionDetector = app.motion_detector
+        if not isinstance(motion_detector, MotionDetector): raise TypeError('motion_detector is not a MotionDetector object')
+        motion_queue = Queue()
+        motion_detector.Subscribe_queue(motion_queue)
+        try:
+            while True:
+                np_frame = motion_queue.get()
+                assert isinstance(np_frame, np.ndarray), f'frame is not an ndarray, frame is: {type(np_frame)}'
+                _successful,buffer = cv2.imencode('.jpg',np_frame)
+                np_frame=buffer.tobytes()
+                yield(b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + np_frame + b'\r\n')
+        except GeneratorExit:
+            # This block will theoretically be executed when the client disconnects
+            motion_detector.Unsubscribe_queue(motion_queue)
+            logger.info('Client disconnected, unsubscribed motion.')
+    return Response(generate_motion_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @app.route('/video_feed')

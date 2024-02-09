@@ -38,6 +38,15 @@ class MotionDetector:
     # _sql_manager:SQLManager
     _kafka_manager:KafkaManager
 
+    _motion_preview_frame_queue_list:list[Queue] = []
+
+    def Subscribe_queue(self, queue:Queue) -> None:
+        if queue not in self._motion_preview_frame_queue_list:
+            self._motion_preview_frame_queue_list.append(queue)
+    def Unsubscribe_queue(self, queue:Queue) -> None:
+        if queue in self._motion_preview_frame_queue_list:
+            self._motion_preview_frame_queue_list.remove(queue)
+
     _current_motion_amount: float = 0.0
 
     # getter method for current_motion_amount
@@ -123,13 +132,13 @@ class MotionDetector:
     def _detectMotionThread(self) -> None:
          # assign init frame
          frame:Frame = self._inbound_frame_queue.get()
-         motion = self._detect_motion(frame)
+         motion = self._detect_motion(frame, self._motion_preview_frame_queue_list)
          next(motion)
          while not self._kill_motion_detection_thread.is_set():
             frame = self._inbound_frame_queue.get()
             _res = motion.send(frame)
             if _res is not None:
-                self._current_motion_amount, bounding_box_image = _res
+                self._current_motion_amount = _res
                 # log motion
                 if self._motion_log_curser >= self._cache_size_rows: self._motion_log_curser = 0
                 self._initilize_motion_logs.iloc[self._motion_log_curser] = pd.Series([frame.guid, self._current_motion_amount, time.time()])
@@ -171,7 +180,7 @@ class MotionDetector:
         return frame.preserve_identity_with(prepared_frame)
     
     @staticmethod
-    def _detect_motion(frame:Frame, render_image = False) -> Generator[Optional[Tuple[float, np.ndarray]], Frame, None]:
+    def _detect_motion(frame:Frame, _motion_preview_frame_queue_list) -> Generator[Optional[float], Frame, None]:
         contourAreaThreshold = 50
         prev_frame:Frame = MotionDetector._preprocess_frame(frame)
         prepared_frame:Frame
@@ -190,12 +199,21 @@ class MotionDetector:
             # 6. Find and optionally draw contours
             contours, _ = cv2.findContours(image=thresh_frame, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE) # type: ignore
             
-            area_of_motion_detected = sum([cv2.contourArea(contour) for contour in contours if cv2.contourArea(contour) > contourAreaThreshold]) # type: ignore
+            area_of_motion_detected:float = sum([cv2.contourArea(contour) for contour in contours if cv2.contourArea(contour) > contourAreaThreshold]) # type: ignore
 
-            if render_image:
+            if len(_motion_preview_frame_queue_list) > 0:
                 contour_image = frame.copy()
                 cv2.drawContours(contour_image, [contour for contour in contours if cv2.contourArea(contour) > contourAreaThreshold], -1, (0, 255, 0), 3) # type: ignore
+
+                # for testing purposes render the contour image to a new window using cv2.imshow
+                cv2.imshow('contour_image', contour_image)
+                cv2.waitKey(1)
+                
+
+
+                for queue in _motion_preview_frame_queue_list:
+                    queue.put(contour_image)
             
             prev_frame = prepared_frame
-            frame = yield area_of_motion_detected, contour_image if render_image else frame # type: ignore
+            frame = yield area_of_motion_detected
 

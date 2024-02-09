@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+  <h1>Motion Configuration</h1>
+  <div class="row">
+    <div class="col-md-8">
+      <!-- Motion preview output -->
+      <img id="motionOutput" src="{{ url_for('motion_feed') }}" width="100%" alt="Motion Feed"/>
+    </div>
+    <div class="col-md-4">
+      <!-- Slider for threshold adjustment -->
+      <label for="thresholdSlider">Contour Threshold:</label>
+      <input type="range" class="form-range" min="0" max="10000" id="thresholdSlider" value="{{ current_threshold }}">
+      <!-- Use current_threshold to set the initial text content -->
+      <p>Value: <span id="sliderValue">{{ current_threshold }}</span></p>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const slider = document.getElementById('thresholdSlider');
+  const sliderValue = document.getElementById('sliderValue');
+  const saveBtn = document.getElementById('saveBtn');
+
+  // Display the current slider value
+  sliderValue.textContent = slider.value;
+
+  // Update the threshold in real-time as the slider is adjusted
+  slider.oninput = function() {
+  console.log("Slider value changed:", this.value); // This should log every time you move the slider
+  sliderValue.textContent = this.value;
+  updateThreshold(this.value); // Make sure this is not commented out
+};
+
+
+  // Save the threshold setting when the save button is clicked
+  saveBtn.onclick = function() {
+    const threshold = slider.value;
+    // Send the threshold value to the server to be saved
+    // This could be done using AJAX to avoid reloading the page
+    saveThreshold(threshold);
+  };
+
+  // Function to update the threshold via AJAX
+  function updateThreshold(threshold) {
+    fetch('/update_motion_threshold', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ threshold: threshold }),
+    })
+    .then(response => response.json())
+    .then(data => {
+      console.log('Threshold updated:', data);
+    })
+    .catch((error) => {
+      console.error('Error:', error);
+    });
+  }
+
+  // Function to save the threshold via AJAX
+  function saveThreshold(threshold) {
+    fetch('/save_threshold', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ threshold: threshold }),
+    })
+    .then(response => response.json())
+    .then(data => {
+      console.log('Threshold saved:', data);
+      // Optionally, provide feedback to the user that the save was successful
+      alert('Threshold saved successfully!');
+    })
+    .catch((error) => {
+      console.error('Error:', error);
+    });
+  }
+});
+</script>
+{% endblock %}

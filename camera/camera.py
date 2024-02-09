@@ -118,7 +118,7 @@ class Camera:
         try:
             logger.debug(f'connecting to camera {camera_url}')
             options = {'rtsp_transport': 'tcp'}
-            self._camera = av.open('rtsp://admin:@10.1.1.17:554/h264Preview_01_main', options=options)
+            self._camera = av.open(camera_url, options=options)
             
             logger.debug('getting video stream')
             stream = next((s for s in self._camera.streams if s.type == 'video'), None)
@@ -364,55 +364,3 @@ class Camera:
     def GetCameraResolution(self) -> Resolution:
         return Resolution(self.GetFrameWidth(), self.GetFrameHeight())
 
-
-if __name__ == '__main__':
-    import sys
-    import logging
-    from log_config import configure_logging
-
-    from camera.filemanager import VideoFileManager
-    configure_logging()
-    
-
-    logger.critical('starting camera.py module AS MAIN')
-
-    # connect to camera
-    # example connection string "rtsp://admin:@192.168.50.30:554/h264Preview_01_main"
-    with Camera("my_camera", 0 , 30) as camera:
-        print('creating queue')
-        queue = Queue()
-
-        print('subscribing to queue')
-        camera.Subscribe_queue(queue)
-
-
-        # create filemanager
-        from filemanager import VideoFileManagerOld
-
-        with VideoFileManagerOld(camera.GetFrameWidth(), camera.GetFrameHeight(), 30, 
-                         os.path.join('E:','security_camera','data'), 'test_camera') as filemanager:
-            
-            logger.info('subscribing filemanager')
-            camera.Subscribe_queue(filemanager.GetQueue())
-
-            logger.info('starting camera')
-            camera.Start()
-
-            logger.info('starting filemanager')
-            filemanager.Start()
-
-            logger.info('starting video')
-            while True:
-                frame = queue.get()
-                assert isinstance(frame, np.ndarray), f'frame is not an ndarray, frame is: {type(frame)}'
-                cv2.imshow('frame',frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    # camera.Stop()
-                    break
-            # # display video in new window
-            # for frame in camera.GetFrame():
-            #     cv2.imshow('frame',frame)
-            #     if cv2.waitKey(1) & 0xFF == ord('q'):
-            #         break
-
-    cv2.destroyAllWindows()

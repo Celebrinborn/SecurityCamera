@@ -37,7 +37,10 @@ class ObjectDetectionResult:
 
 
 class PersonDetectedStrategy(MessageStrategy):
-    html_template = f"""
+    
+    @staticmethod
+    def get_html_template()->str:
+        return f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -79,6 +82,7 @@ class PersonDetectedStrategy(MessageStrategy):
 </body>
 </html>
 """
+
     
     last_email_sent:dict[str, datetime.datetime] = {}
 
@@ -131,7 +135,7 @@ class PersonDetectedStrategy(MessageStrategy):
         for sender in self._senders:
             sender.Send(
                 subject=f"Security Alert: Person Detected by {objectDetectionResult.camera_name}",
-                content=self.html_template,
+                content=self.get_html_template(),
                 attachments=[objectDetectionResult.frame_jpg]
             )
 

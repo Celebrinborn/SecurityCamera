@@ -4,7 +4,7 @@ import os
 from queue import Queue
 from typing import Union
 import cv2
-from flask import Flask, Response, render_template, current_app
+from flask import Flask, Response, jsonify, render_template, current_app, request
 import numpy as np
 from camera.camera import Camera
 from camera.filemanager import VideoFileManager, Resolution, FileManager
@@ -30,19 +30,7 @@ if Path('secrets','.env').is_file():
     dotenv.load_dotenv(Path('secrets','.env'))
 
     logger.debug(f'environment variables: {os.environ.keys()}')
-#     configure_logging()
-#     logger = logging.getLogger()
-# else:
-#     configure_logging(clear_log_file=True)
-#     logger = logging.getLogger()
-#     logger.warning('CLEARED LOG FILE AS production ENVIRONMENT VARIABLE IS NOT SET')
 
-
-# For local debugging load the environment variables from the .env file in the secrets folder if it exists
-# from dotenv import load_dotenv
-# if Path('secrets','.env').is_file():
-#     load_dotenv(Path('secrets','.env'))
-# verify SA_PASSWORD is set
 if 'SA_PASSWORD' not in os.environ:
     logger.warning('SA_PASSWORD environment variable is not set')
     # check if /run/secrets/SA_PASSWORD exists
@@ -130,6 +118,47 @@ def camera_route():
     logger.debug(r'entered /camera')
     return render_template('camera.html', camera_name = camera_name)
 
+@app.route('/motion_config')
+def motion_config():
+    logger.debug(r'entered /motion_config')
+    current_threshold = app.motion_detector.contour_threshold
+    return render_template('motion_config.html', camera_name=camera_name, current_threshold=current_threshold)
+
+@app.route('/update_motion_threshold', methods=['POST'])
+def update_threshold():
+    try:
+        # Extract the new threshold value from the request
+        new_threshold = request.json['threshold']
+        # Update the motion_detector's contour_threshold
+        app.motion_detector.contour_threshold = float(new_threshold)
+        return jsonify({'status': 'success', 'new_threshold': new_threshold})
+    except Exception as e:
+        logger.error(f"Error updating threshold: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/motion_feed')
+def motion_feed():
+    logger.debug(r'entered /motion_feed')
+    def generate_motion_frames():
+        logger.info('subscribing motion')
+        motion_detector: MotionDetector = app.motion_detector
+        if not isinstance(motion_detector, MotionDetector): raise TypeError('motion_detector is not a MotionDetector object')
+        motion_queue = Queue()
+        motion_detector.Subscribe_queue(motion_queue)
+        try:
+            while True:
+                np_frame = motion_queue.get()
+                assert isinstance(np_frame, np.ndarray), f'frame is not an ndarray, frame is: {type(np_frame)}'
+                _successful,buffer = cv2.imencode('.jpg',np_frame)
+                np_frame=buffer.tobytes()
+                yield(b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + np_frame + b'\r\n')
+        except GeneratorExit:
+            # This block will theoretically be executed when the client disconnects
+            motion_detector.Unsubscribe_queue(motion_queue)
+            logger.info('Client disconnected, unsubscribed motion.')
+    return Response(generate_motion_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @app.route('/video_feed')
@@ -161,10 +190,12 @@ def video_feed():
                 start_x = 10
                 start_y = frame.shape[0] - 10  # 10 pixels from the bottom
 
-                cv2.putText(frame, screen_text, (start_x, start_y), cv2.FONT_HERSHEY_SIMPLEX, text_scale, (0, 0, 0), text_thickness + 2)  # Black Background
-                cv2.putText(frame, screen_text, (start_x, start_y), cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_thickness)  # White Text
+                frame_copy = frame.copy() # prevent overwriting the original frame
 
-                _successful,buffer = cv2.imencode('.jpg',frame)
+                cv2.putText(frame_copy, screen_text, (start_x, start_y), cv2.FONT_HERSHEY_SIMPLEX, text_scale, (0, 0, 0), text_thickness + 2)  # Black Background
+                cv2.putText(frame_copy, screen_text, (start_x, start_y), cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_thickness)  # White Text
+
+                _successful,buffer = cv2.imencode('.jpg',frame_copy)
                 if _successful:
                     frame=buffer.tobytes()
                     yield(b'--frame\r\n'

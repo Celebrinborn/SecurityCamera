@@ -38,6 +38,30 @@ class MotionDetector:
     # _sql_manager:SQLManager
     _kafka_manager:KafkaManager
 
+    _motion_threshold:float
+    _contour_threshold:float
+
+    # getter method for contour_threshold
+    @property
+    def contour_threshold(self) -> float:
+        return self._contour_threshold
+
+    # setter method for contour_threshold
+    @contour_threshold.setter
+    def contour_threshold(self, value: float) -> None:
+        self._contour_threshold = value
+
+
+
+    _motion_preview_frame_queue_list:list[Queue] = []
+
+    def Subscribe_queue(self, queue:Queue) -> None:
+        if queue not in self._motion_preview_frame_queue_list:
+            self._motion_preview_frame_queue_list.append(queue)
+    def Unsubscribe_queue(self, queue:Queue) -> None:
+        if queue in self._motion_preview_frame_queue_list:
+            self._motion_preview_frame_queue_list.remove(queue)
+
     _current_motion_amount: float = 0.0
 
     # getter method for current_motion_amount
@@ -50,13 +74,13 @@ class MotionDetector:
     _motion_log_curser:int = 0
     _cache_size_rows:int = 4000
 
-    def __init__(self, camera_name:str, alert_endpoint:Union[str, int, None] = None, motion_threshold:Optional[int] = None, message_rate_limit:Optional[float] = None) -> None:
+    def __init__(self, camera_name:str, alert_endpoint:Union[str, int, None] = None, message_rate_limit:Optional[float] = None) -> None:
         self.alert_endpoint:Union[int, str] = alert_endpoint if alert_endpoint \
             else os.environ['motion_detector_endpoint'] if 'motion_detector_endpoint' in os.environ \
             else r'http://127.0.0.1:8888/detect_objects'
-        self.motion_threshold = motion_threshold if motion_threshold \
-            else int(os.environ['motion_threshold']) if 'motion_threshold' in os.environ and os.environ['motion_threshold'].isnumeric() \
-            else 50
+        self.motion_threshold = float(os.environ.get('motion_threshold', 50)) if str(os.environ.get('motion_threshold', 50)).isnumeric() else 50
+        self.contour_threshold = float(os.environ.get('contour_threshold', 50)) if str(os.environ.get('contour_threshold', 50)).isnumeric() else 50
+        logger.debug(f'contour_threshold {"is in environs" if "contour_threshold" in os.environ else "is NOT in environs"}: {self.contour_threshold=}')
         self.message_rate_limit = message_rate_limit if message_rate_limit \
             else float(os.environ['object_detection_second_per_request_rate_limit']) if 'object_detection_second_per_request_rate_limit' in os.environ and os.environ['object_detection_second_per_request_rate_limit'].isnumeric() \
             else 5.0
@@ -129,7 +153,7 @@ class MotionDetector:
             frame = self._inbound_frame_queue.get()
             _res = motion.send(frame)
             if _res is not None:
-                self._current_motion_amount, bounding_box_image = _res
+                self._current_motion_amount = _res
                 # log motion
                 if self._motion_log_curser >= self._cache_size_rows: self._motion_log_curser = 0
                 self._initilize_motion_logs.iloc[self._motion_log_curser] = pd.Series([frame.guid, self._current_motion_amount, time.time()])
@@ -170,9 +194,8 @@ class MotionDetector:
         prepared_frame = cv2.GaussianBlur(src=prepared_frame, ksize=(5, 5), sigmaX=0) # type: ignore
         return frame.preserve_identity_with(prepared_frame)
     
-    @staticmethod
-    def _detect_motion(frame:Frame, render_image = False) -> Generator[Optional[Tuple[float, np.ndarray]], Frame, None]:
-        contourAreaThreshold = 50
+    
+    def _detect_motion(self, frame:Frame) -> Generator[Optional[float], Frame, None]:
         prev_frame:Frame = MotionDetector._preprocess_frame(frame)
         prepared_frame:Frame
         while True:
@@ -190,12 +213,26 @@ class MotionDetector:
             # 6. Find and optionally draw contours
             contours, _ = cv2.findContours(image=thresh_frame, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE) # type: ignore
             
-            area_of_motion_detected = sum([cv2.contourArea(contour) for contour in contours if cv2.contourArea(contour) > contourAreaThreshold]) # type: ignore
+            area_of_motion_detected:float = sum([cv2.contourArea(contour) for contour in contours if cv2.contourArea(contour) > self.contour_threshold]) # type: ignore
 
-            if render_image:
+            if len(self._motion_preview_frame_queue_list) > 0:
                 contour_image = frame.copy()
-                cv2.drawContours(contour_image, [contour for contour in contours if cv2.contourArea(contour) > contourAreaThreshold], -1, (0, 255, 0), 3) # type: ignore
+                cv2.drawContours(contour_image, [contour for contour in contours if cv2.contourArea(contour) > self.contour_threshold], -1, (0, 255, 0), 3) # type: ignore
+                for queue in self._motion_preview_frame_queue_list:
+                    queue.put(contour_image)
             
+            
+            # # for debugging draw contours
+            # frame_copy = frame.copy()
+            # cv2.drawContours(frame_copy, [contour for contour in contours if cv2.contourArea(contour) > self.contour_threshold], -1, (0, 255, 0), 3) # type: ignore
+            # # render the frame with imshow
+            # # render number of contours
+            # cv2.putText(frame_copy, f'contours: {len([contour for contour in contours if cv2.contourArea(contour) > self.contour_threshold])}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            # # render area of motion detected
+            # cv2.putText(frame_copy, f'area of motion detected: {area_of_motion_detected}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            # cv2.imshow('frame', frame_copy)
+            # cv2.waitKey(1)  
+                    
             prev_frame = prepared_frame
-            frame = yield area_of_motion_detected, contour_image if render_image else frame # type: ignore
+            frame = yield area_of_motion_detected
 

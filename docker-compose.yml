@@ -40,6 +40,8 @@ services:
       <<: *camera_env_common
       CAMERA_URL: 'rtsp://admin:@10.1.1.17:554/h264Preview_01_main'
       CAMERA_NAME: backdoor_camera
+      contour_threshold: "3000"
+      motion_threshold: "3000"
       # profile: "true"
     ports:
       - "7017:7007"
@@ -50,6 +52,9 @@ services:
       <<: *camera_env_common
       CAMERA_URL: 'rtsp://admin:@10.1.1.18:554/h264Preview_01_main'
       CAMERA_NAME: front_yard_east_camera
+      contour_threshold: "3000"
+      motion_threshold: "3000"
+
     ports:
       - "7018:7007"
   front_east_east_camera:
@@ -59,6 +64,8 @@ services:
       <<: *camera_env_common
       CAMERA_URL: 'rtsp://admin:@10.1.1.16:554/h264Preview_01_main'
       CAMERA_NAME: front_east_east_camera
+      contour_threshold: "3000"
+      motion_threshold: "3000"
     ports:
       - "7016:7007"
   

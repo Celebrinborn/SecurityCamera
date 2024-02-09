@@ -103,11 +103,13 @@ except Exception as e:
     raise e
 
 
+camera_name = os.environ.get('CAMERA_NAME', 'webcam')
+
 # Route for the index page
 @app.route('/')
 def index():
     # return 'hello world'
-    return render_template('index.html')
+    return render_template('index.html', camera_name = camera_name)
 
 # Route for the status API
 @app.route('/status')
@@ -121,7 +123,7 @@ def status():
 @app.route('/camera')
 def camera_route():
     logger.debug(r'entered /camera')
-    return render_template('camera.html')
+    return render_template('camera.html', camera_name = camera_name)
 
 
 

@@ -134,7 +134,7 @@ class FileManager:
 
         logger.info(f'FileManager initialized. Path: {self.folder_path.absolute()}, max dir size: {self.max_dir_size:,}')
         logger.info(f'Current size of directory is {(self.get_total_dir_size() / self.max_dir_size * 100):.2f}%. {self.get_total_dir_size():,} of {self.max_dir_size:,}')
-        logger.info(f'Current files in directory: {list(root_folder.glob("*"))}')
+        # logger.info(f'Current files in directory: {list(root_folder.glob("*"))}')
     
     def scan(self):
         # Update the _files dictionary with VideoRecord objects

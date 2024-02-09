@@ -60,6 +60,10 @@ class Camera:
     prevFrame: Frame
     currentFrame: Frame
 
+    camera_thread:threading.Thread # the thread that captures frames from the camera
+
+    _time_of_last_frame:float = 0.0
+
     def __init__(self, camera_name:str, camera_url:Union[str, int], max_fps:int, cv2_module: typing.Type[cv2.VideoCapture]=cv2.VideoCapture) -> None:
         """
         Initializes the camera instance.
@@ -119,7 +123,28 @@ class Camera:
 
         self.Start()
 
-        
+        # start the health check thread
+        self._health_check_thread = threading.Thread(target=self._heartbeat, name='Camera_Health_Check', daemon=True)
+        self._health_check_thread.start()
+
+    def _heartbeat(self):
+        logger.info(f'starting health monitor for camera {self._camera_name}')
+        while True:
+            if time.time() - self._time_of_last_frame > 5:
+                logger.warning(f'heartbeat camera {self._camera_name} has not received a frame in 5 seconds')
+
+                # kill the camera thread
+                logger.info(f'killing camera thread {self._camera_name}')
+                self.Stop()
+                logger.info(f'waiting for camera thread {self._camera_name} to die')
+                self.camera_thread.join()
+
+                logger.info(f'restarting camera thread {self._camera_name}')
+                self.Start()
+            else:
+                logger.debug(f'heartbeat camera {self._camera_name} has received a frame {time.time() - self._time_of_last_frame:.02f} seconds ago')
+            time.sleep(30)
+
     # Define the __enter__ method for the Camera class
     def __enter__(self):
         """
@@ -163,6 +188,7 @@ class Camera:
             self.prevFrame = self.currentFrame
             # now assign the current frame to the newly read frame
             self.currentFrame = newFrame
+            self._time_of_last_frame = time.time()
             yield self.currentFrame
     
     def Subscribe_queue(self, queue: Queue):
@@ -213,11 +239,11 @@ class Camera:
                 elapsed_time = end - start
                 time_to_sleep = max(1.0 / fps - elapsed_time, 0)
                 time.sleep(time_to_sleep)
-        thread = threading.Thread(target=_capture, 
+        self.camera_thread = threading.Thread(target=_capture, 
                                   name="Camera_Thread", 
                                   daemon=True,
                                   args=(self._subscription_manager, self._max_fps))
-        thread.start()
+        self.camera_thread.start()
     
     def Stop(self):
         """

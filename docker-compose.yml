@@ -40,6 +40,7 @@ services:
       <<: *camera_env_common
       CAMERA_URL: 'rtsp://admin:@10.1.1.17:554/h264Preview_01_main'
       CAMERA_NAME: backdoor_camera
+      # profile: "true"
     ports:
       - "7017:7007"
   front_yard_east_camera:

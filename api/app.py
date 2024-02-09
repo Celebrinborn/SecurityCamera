@@ -23,8 +23,13 @@ logger = logging.getLogger()
 # list all environment variable names
 logger.debug(f'environment variables: {os.environ.keys()}')
 
-# # Configure logging
-# if 'PRODUCTION' in os.environ and os.environ['PRODUCTION'] == 'True':
+# check for env file
+if Path('secrets','.env').is_file():
+    logger.info('found .env file')
+    import dotenv
+    dotenv.load_dotenv(Path('secrets','.env'))
+
+    logger.debug(f'environment variables: {os.environ.keys()}')
 #     configure_logging()
 #     logger = logging.getLogger()
 # else:

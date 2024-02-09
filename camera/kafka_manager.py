@@ -28,6 +28,7 @@ class KafkaManager:
     _instance = None  # Class-level variable to hold the singleton instance
     _lock = threading.Lock()
     _producer: KafkaProducer
+    bootstrap_servers: str
 
     def __new__(cls, bootstrap_servers=None):
         # If an instance already exists, return it
@@ -40,26 +41,30 @@ class KafkaManager:
         logger.debug('Kafka Manager does not exist, creating new instance')
         return cls._instance
 
+    def connect(self) -> bool:
+        try:
+            self._producer = KafkaProducer(
+                bootstrap_servers=self.bootstrap_servers
+            )
+        except KafkaError as e:
+            logger.error(f'Error connecting to Kafka: {e}')
+            logger.error(f'bootstrap_servers: {self.bootstrap_servers}')
+            logger.error(f'KAFKA_BOOTSTRAP_SERVER environment variable: {os.environ.get("KAFKA_BOOTSTRAP_SERVER", "not set")}')
+            
+            logger.critical('Unable to connect to Kafka, camera will be unable to send messages to the rest of the system.')
+            # raise e #TODO: Need to account for this error more smartly, right now I just crash
+            return False
+        return True
     def __init__(self, bootstrap_servers=None):
         # If an instance already exists, return it
         if hasattr(self, '_producer') and self._producer:
             return
 
-        # get bootstrap_servers from env variable if not passed as argument
         if bootstrap_servers is None:
             bootstrap_servers = os.environ.get('KAFKA_BOOTSTRAP_SERVER', 'localhost:9092')
-        try:
-            self._producer = KafkaProducer(
-                bootstrap_servers=bootstrap_servers
-            )
-        except KafkaError as e:
-            logger.error(f'Error connecting to Kafka: {e}')
-            logger.error(f'bootstrap_servers: {bootstrap_servers}')
-            logger.error(f'KAFKA_BOOTSTRAP_SERVER environment variable: {os.environ.get("KAFKA_BOOTSTRAP_SERVER", "not set")}')
-            
+        self.bootstrap_servers = bootstrap_servers
 
-            raise e #TODO: Need to account for this error more smartly, right now I just crash
-
+        self.connect()
 
     @classmethod
     def _cache_avro_schema(cls) -> None:
@@ -77,6 +82,9 @@ class KafkaManager:
         cls._avro_cached_schema = avro.schema.parse(schema_str)
 
     def send_message(self, topic, value:str):
+        if not hasattr(self, '_producer'):
+            logger.error('Kafka producer not available')
+            return
         try:
             future = self._producer.send(topic, bytes(value, 'utf-8'))
             return future
@@ -84,6 +92,10 @@ class KafkaManager:
             logger.error(f'Error sending message to topic {topic}: {e}')
             #TODO: Need to account for this error more smartly, right now I just ignore it
     def send_motion_alert(self, frame: Frame, camera_name: str, priority: float, motion_amount: float, timeout: int = 60*5):
+        # check if self has producer
+        if not hasattr(self, '_producer'):
+            logger.error('Kafka producer not available')
+            return
         topic = 'camera_motion_threshold_exceeded'
         frame_data = {
             "camera_name": camera_name,

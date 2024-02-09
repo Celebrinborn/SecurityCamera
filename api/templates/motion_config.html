@@ -10,11 +10,10 @@
     </div>
     <div class="col-md-4">
       <!-- Slider for threshold adjustment -->
-      <label for="thresholdSlider">Motion Threshold:</label>
-      <input type="range" class="form-range" min="0" max="255" id="thresholdSlider">
-      <p>Value: <span id="sliderValue">128</span></p>
-      <!-- Button to save changes -->
-      <button id="saveBtn" class="btn btn-primary">Save Changes</button>
+      <label for="thresholdSlider">Contour Threshold:</label>
+      <input type="range" class="form-range" min="0" max="10000" id="thresholdSlider" value="{{ current_threshold }}">
+      <!-- Use current_threshold to set the initial text content -->
+      <p>Value: <span id="sliderValue">{{ current_threshold }}</span></p>
     </div>
   </div>
 </div>
@@ -30,11 +29,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Update the threshold in real-time as the slider is adjusted
   slider.oninput = function() {
-    sliderValue.textContent = this.value;
-    // Optional: Update the motion detection threshold in real-time
-    // This can be achieved by sending the value to the server using AJAX
-    // updateThreshold(this.value);
-  };
+  console.log("Slider value changed:", this.value); // This should log every time you move the slider
+  sliderValue.textContent = this.value;
+  updateThreshold(this.value); // Make sure this is not commented out
+};
+
 
   // Save the threshold setting when the save button is clicked
   saveBtn.onclick = function() {
@@ -46,7 +45,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Function to update the threshold via AJAX
   function updateThreshold(threshold) {
-    fetch('/update_threshold', {
+    fetch('/update_motion_threshold', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

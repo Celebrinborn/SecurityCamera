@@ -115,6 +115,7 @@ class VideoRecord:
 
         return df
     def flush_cache(self):
+        return # TODO: fix this
         # Write the cached data to the database
         batch_data = self._cache.iloc[:self.row_curser]
 

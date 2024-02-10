@@ -12,6 +12,8 @@ from avro.datafile import DataFileReader
 
 from kafka.consumer.fetcher import ConsumerRecord
 
+from zoneinfo import ZoneInfo
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -76,12 +78,14 @@ class PersonDetectedStrategy(MessageStrategy):
     <h1>Security Alert: Person Detected</h1>
     <p>A person has been detected by your security camera. Please review the image and take appropriate action.</p>
     <img src="cid:image0" alt="Security Alert Image" class="alert-image">
-    <p>Time of Detection: {datetime.datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")}</p>
+    <p>Time of Detection: {datetime.datetime.now(ZoneInfo('America/Los_Angeles')).strftime('%A, %B %d, %Y at %I:%M %p')}</p>
     <p>If you recognize this activity as normal, no further action is needed. If not, please check your premises or contact authorities.</p>
 </div>
 </body>
 </html>
 """
+    
+    
 
     
     last_email_sent:dict[str, datetime.datetime] = {}

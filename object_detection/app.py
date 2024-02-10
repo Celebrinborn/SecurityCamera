@@ -217,7 +217,8 @@ class KafkaImageConsumer:
             logger.warning(f"KAFKA_BOOTSTRAP_SERVER environment variable not set. Defaulting to {self.KAFKA_CONNECTION_STRING}")
         try:
             logger.info(f'Initializing Kafka Consumer. bootstrap server: {self.KAFKA_CONNECTION_STRING}')
-            self.consumer = KafkaConsumer(self.topic, bootstrap_servers=[self.KAFKA_CONNECTION_STRING])
+            self.consumer = KafkaConsumer(self.topic, bootstrap_servers=[self.KAFKA_CONNECTION_STRING],
+                                          auto_offset_reset='latest', enable_auto_commit=True,)
             logger.info("Kafka Consumer initialized")
         except KafkaError as e:
             logger.error(f"Error initializing Kafka Consumer: {e}")
@@ -393,7 +394,7 @@ def main():
                 try: producer.send_warning("queue_full", f"priority queue is full, {queue.qsize()} items in queue")
                 except NotImplementedError as e: logger.warning(f"{e}") 
             item: MotionMessageQueueItem = consumer.queue.get()
-            logger.debug(f"Processing item from queue: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout}")
+            logger.debug(f"Processing item from queue: {item.camera_name} {item.guid} {item.creation_timestamp} {item.motion_amount} {item.timeout} with {queue.qsize()} items in queue")
 
             # if item age is greater than timeout, skip
             if item.creation_timestamp + item.timeout < time.time():
